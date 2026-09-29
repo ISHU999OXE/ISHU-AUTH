@@ -13,17 +13,17 @@
 <meta property="og:type" content="website">
 <meta property="og:title" content="ISHU AUTH | Key &amp; License Management System">
 <meta property="og:description" content="Premium key &amp; license management panel - Google login, API keys, users, licenses, HWID lock and more.">
-<meta property="og:url" content="https://ihh231792-coder.github.io/KEYUTH-web/">
-<meta property="og:image" content="https://ihh231792-coder.github.io/KEYUTH-web/logo.png">
+<meta property="og:url" content="https://ISHU999OXE.github.io/ISHU-AUTH/">
+<meta property="og:image" content="https://ISHU999OXE.github.io/ISHU-AUTH/logo.png">
 <meta property="og:site_name" content="ISHU AUTH">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="ISHU AUTH | Key &amp; License Management System">
 <meta name="twitter:description" content="Premium key &amp; license management panel - Google login, API keys, users, licenses, HWID lock and more.">
-<meta name="twitter:image" content="https://ihh231792-coder.github.io/KEYUTH-web/logo.png">
-<link rel="canonical" href="https://ihh231792-coder.github.io/KEYUTH-web/">
+<meta name="twitter:image" content="https://ISHU999OXE.github.io/ISHU-AUTH/logo.png">
+<link rel="canonical" href="https://ISHU999OXE.github.io/ISHU-AUTH/">
 <link rel="icon" type="image/png" href="logo.png">
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"WebApplication","name":"ISHU AUTH","url":"https://ihh231792-coder.github.io/KEYUTH-web/","logo":"https://ihh231792-coder.github.io/KEYUTH-web/logo.png","description":"ISHU AUTH - Premium key &amp; license management panel with Google login, API keys, users, licenses and HWID lock.","applicationCategory":"UtilitiesApplication","operatingSystem":"Web","offers":{"@type":"Offer","price":"0","priceCurrency":"INR"}}
+{"@context":"https://schema.org","@type":"WebApplication","name":"ISHU AUTH","url":"https://ISHU999OXE.github.io/ISHU-AUTH/","logo":"https://ISHU999OXE.github.io/ISHU-AUTH/logo.png","description":"ISHU AUTH - Premium key &amp; license management panel with Google login, API keys, users, licenses and HWID lock.","applicationCategory":"UtilitiesApplication","operatingSystem":"Web","offers":{"@type":"Offer","price":"0","priceCurrency":"INR"}}
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -41,6 +41,22 @@
 .auth-body::before, .auth-body::after { z-index: 0; opacity: 0.5; }
 .auth-lang { display: flex; justify-content: center; margin-bottom: 14px; }
 .auth-lang select { background: var(--bg-3); color: var(--text); border: 1px solid var(--border); border-radius: 9px; padding: 7px 12px; font-family: 'Rajdhani', sans-serif; font-weight: 600; font-size: 14px; cursor: pointer; }
+.legal-links { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-top: 4px; }
+.legal-links a { color: var(--accent, #ff4d2e); text-decoration: none; cursor: pointer; font-size: 12px; }
+.legal-links a:hover { text-decoration: underline; }
+.overlay { position: fixed; inset: 0; z-index: 99; background: rgba(0,0,0,.68); display: none; align-items: center; justify-content: center; padding: 20px; }
+.overlay.show { display: flex; }
+.overlay .modal { max-width: 600px; width: 100%; max-height: 78vh; overflow: auto; background: var(--card, #0e0e10); border: 1px solid var(--border, #2a2a2e); border-radius: 14px; padding: 22px 24px; box-shadow: 0 18px 60px rgba(0,0,0,.55); }
+.overlay .modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.overlay .modal-head h2 { font-size: 20px; letter-spacing: 1px; color: var(--text, #fff); }
+.overlay .modal-head .x { background: none; border: none; color: var(--muted, #999); font-size: 28px; cursor: pointer; line-height: 1; }
+.overlay .modal-body { color: var(--muted, #bbb); font-size: 13px; line-height: 1.65; }
+.overlay .modal-body h3 { color: var(--text, #fff); margin: 14px 0 6px; font-size: 14px; letter-spacing: .5px; }
+.overlay .modal-body p { margin: 6px 0; }
+.agree { display: flex; align-items: flex-start; gap: 8px; font-size: 12.5px; color: var(--muted, #bbb); line-height: 1.5; margin-bottom: 12px; text-align: left; }
+.agree input { margin-top: 2px; accent-color: var(--accent, #ff4d2e); width: 14px; height: 14px; flex: none; }
+.agree a { color: var(--accent, #ff4d2e); cursor: pointer; text-decoration: none; }
+.agree a:hover { text-decoration: underline; }
 </style>
 
 <div class="auth-shell">
@@ -75,6 +91,8 @@
       <button class="btn" type="submit" data-i18n="login">Login</button>
     </form>
 
+    <p class="agree" style="justify-content:center;text-align:center;margin:10px 0 14px">By logging in you agree to the <a onclick="openTerms('terms')">Terms &amp; Conditions</a> &amp; <a onclick="openTerms('copyright')">Copyright Policy</a> &middot; &copy; 2026 ISHU</p>
+
     <div class="auth-divider"><span data-i18n="or_use">or login with</span></div>
     <div class="g-host" id="gGoing"></div>
 
@@ -83,8 +101,26 @@
     </div>
   </div>
 
-  <div class="auth-status" style="padding:16px 6px 0;justify-content:center">
-    <span data-i18n="copyright">© v1.0 &middot; Copyrighted by ISHU</span>
+  <div class="auth-status" style="padding:16px 6px 0;justify-content:center;flex-direction:column">
+    <span data-i18n="copyright">© 2026 ISHU AUTH. All Rights Reserved.</span>
+    <span class="legal-links">
+      <a onclick="openTerms('terms')">Terms &amp; Conditions</a> ·
+      <a onclick="openTerms('privacy')">Privacy Policy</a> ·
+      <a onclick="openTerms('copyright')">Copyright</a>
+    </span>
+  </div>
+</div>
+
+<div class="overlay" id="termsOverlay" onclick="if(event.target===this)closeTerms()">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="termsTitle">
+    <div class="modal-head">
+      <div style="display:flex;align-items:center;gap:10px">
+        <img src="logo.png" alt="ISHU AUTH" style="height:34px;width:34px;border-radius:8px">
+        <h2 id="termsTitle" style="margin:0">Terms &amp; Conditions</h2>
+      </div>
+      <button type="button" class="x" onclick="closeTerms()" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body" id="termsBody"></div>
   </div>
 </div>
 
@@ -263,6 +299,10 @@ function syncMode() {
         <label for="rP" data-i18n="password">${t('password')}</label>
         <input type="password" id="rP" placeholder="${t('create_password')}">
       </div>
+      <div class="field">
+        <label class="agree"><input type="checkbox" id="agreeT" required>
+          <span><strong>READ &amp; AGREE:</strong> I have read &amp; agree to the <a onclick="openTerms('terms')">Terms &amp; Conditions</a>, <a onclick="openTerms('privacy')">Privacy Policy</a> &amp; <a onclick="openTerms('copyright')">Copyright Notice</a> of ISHU AUTH.</span></label>
+      </div>
       <button class="btn" type="submit">${t('create_account')}</button>`;
     f.id = 'regForm';
     document.getElementById('authFooter').innerHTML =
@@ -279,6 +319,8 @@ function showLogin()    { isRegister = false; alertBox.className = 'alert'; loca
 
 function doRegister(e) {
   e.preventDefault();
+  const cb = document.getElementById('agreeT');
+  if (cb && !cb.checked) return showAlert('You must agree to the Terms & Conditions before registering.', 'error');
   const u = document.getElementById('rU').value;
   const p = document.getElementById('rP').value;
   const res = Auth.register(u, p);
@@ -306,6 +348,51 @@ document.body.appendChild(glow);
 document.addEventListener('pointermove', e => {
   glow.style.transform = 'translate(' + e.clientX + 'px, ' + e.clientY + 'px)';
 }, { passive: true });
+
+/* ============ Terms / Privacy / Copyright (copyrighted by ISHU) ============ */
+const TERMS_TXT = {
+  terms: {
+    title: 'Terms & Conditions',
+    body: '<img src="logo.png" alt="ISHU AUTH" style="height:44px;display:block;margin:0 auto 10px">' +
+          '<p style="text-align:center;color:var(--text,#fff)"><strong>ISHU AUTH — Terms &amp; Conditions of Service</strong></p>' +
+          '<h3>1. About This Platform</h3><p>ISHU AUTH is a key &amp; license management platform developed independently and from scratch by the developer <strong>ISHU</strong>. It is his own original work — no third-party source code, product, template or brand was copied to create it.</p>' +
+          '<h3>2. Acceptance</h3><p>By checking the "Read &amp; Agree" box and registering an account, you confirm that you have read, understood and accept these Terms &amp; Conditions, the Privacy Policy and the Copyright Notice.</p>' +
+          '<h3>3. Account &amp; Owner ID</h3><p>Every account receives a permanent, unique Owner ID, Application ID, API Key and Secret. These identifiers are stable and will never be reset automatically for any reason.</p>' +
+          '<h3>4. Your Keys &amp; Data</h3><p>License keys, users and applications belong to the account that created them and are stored on a persistent database. They are never deleted automatically and are never modified without the owner\'s explicit action.</p>' +
+          '<h3>5. Allowed Use</h3><p>You may use this platform and its SDK (IshuAuth.cs) only to manage licensing for software/applications that you own. You may not use it to harm, scam or mislead other users, and you may not resell the platform, the SDK or the API to third parties as your own product.</p>' +
+          '<h3>6. Prohibited Activities</h3><p>Copying, cloning, rebranding, repackaging, reverse-engineering or redistributing this website, its source code, the SDK, the API or the ISHU AUTH logo is strictly prohibited (see Copyright Notice).</p>' +
+          '<h3>7. Key Validity</h3><p>Keys generated by you have their own expiry (permanent / hours / days). Expired or banned keys are rejected by the API automatically. You are responsible for issuing, renewing and managing your keys.</p>' +
+          '<h3>8. Termination</h3><p>ISHU may suspend or revoke any account that violates these terms, attempts to harm the platform, or harasses other users. Your own applications and data remain yours until such action is taken.</p>' +
+          '<h3>9. Liability</h3><p>ISHU AUTH is provided "as is" — it works for what it does, but the developer is not liable for any loss caused by misuse of keys, downtime of the hosting service, or any third-party action.</p>'
+  },
+  privacy: {
+    title: 'Privacy Policy',
+    body: '<p style="text-align:center;color:var(--text,#fff)"><strong>ISHU AUTH — Privacy Policy</strong></p>' +
+          '<h3>What we store</h3><p>Only the minimum data required to operate the service: your username, a salted password hash (your plain password is never stored), your Owner ID, Application IDs and the API keys / secrets and license records you create.</p>' +
+          '<h3>What we do NOT collect</h3><p>No payment card data, no government IDs, no browsing history, no location data. Google Sign-In returns only your name and email from your Google profile if you choose to use it — nothing else.</p>' +
+          '<h3>How your data is protected</h3><p>Your data is stored on a persistent, managed database that survives server updates and restarts. It is never sold, rented or shared with any third party.</p>' +
+          '<h3>Your control</h3><p>You can delete any application, key or user you created at any time from your dashboard. To delete your account, contact the developer.</p>'
+  },
+  copyright: {
+    title: 'Copyright Notice',
+    body: '<img src="logo.png" alt="ISHU AUTH" style="height:48px;display:block;margin:0 auto 6px">' +
+          '<p style="text-align:center;color:var(--text,#fff)"><strong>&copy; 2026 ISHU. All Rights Reserved.</strong></p>' +
+          '<p style="text-align:center">This project — <strong>ISHU AUTH</strong> — is the original, independent creation of developer <strong>ISHU</strong>.<br>It was <strong>built from scratch by him. He did not copy anyone.</strong></p>' +
+          '<h3>Protected Material</h3><p>ISHU AUTH &mdash; including its name, logo, "ISHU PREMIUM SECURITY LOCK" branding, website design &amp; theme, source code (server.py, core.js, IshuAuth.cs, ISHU_AUTH_API.cs), API endpoints, documentation and SDK &mdash; is the exclusive property of <strong>ISHU</strong>, protected under copyright law.</p>' +
+          '<h3>No Copying Allowed</h3><p>You may <strong>not</strong> copy, clone, fork, modify, rebrand, translate, publish, resell or redistribute any part of this project, in whole or in part, in any form — neither for free nor for money — without the prior written permission of ISHU.</p>' +
+          '<h3>License To Use (Not To Copy)</h3><p>You receive the right to <strong>use</strong> ISHU AUTH as a service and to integrate the SDK into software that you own. You do not receive any right to copy, imitate or distribute the technology itself.</p>' +
+          '<h3>Enforcement</h3><p>Unauthorized copying or imitation will be treated as copyright infringement and may result in legal action.</p>' +
+          '<p style="text-align:center;margin-top:10px">&copy; 2026 ISHU AUTH &middot; Developed by <strong>ISHU</strong> &middot; All Rights Reserved</p>'
+  }
+};
+function openTerms(which) {
+  const c = TERMS_TXT[which] || TERMS_TXT.terms;
+  document.getElementById('termsTitle').textContent = c.title;
+  document.getElementById('termsBody').innerHTML = c.body;
+  document.getElementById('termsOverlay').classList.add('show');
+}
+function closeTerms() { document.getElementById('termsOverlay').classList.remove('show'); }
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeTerms(); });
 
 </script>
 </body>
