@@ -654,17 +654,19 @@ class Handler(SimpleHTTPRequestHandler):
         if ownerid and secret:
             name = body.get("name") or ""
             con = db()
-            # Match the canonical owner row by owner_id + secret first. The name
-            # is just the app display label, so a name mismatch must never reject
-            # a valid owner (this is what caused the bot's "API error" / 401).
-            owner = con.execute(
-                "SELECT api_key, appid FROM owners WHERE owner_id=? AND secret=?",
-                (ownerid, secret)).fetchone()
-            if owner is None and name:
+            # Prefer an app that matches the requested name (appid or appname).
+            # Fall back to the first matching row only for backward-compat
+            # (ownerid+secret alone can't pick between multiple apps).
+            owner = None
+            if name:
                 owner = con.execute(
                     "SELECT api_key, appid FROM owners WHERE owner_id=? AND secret=?"
-                    " AND (appname=? OR appid=?)",
+                    " AND (appid=? OR appname=?)",
                     (ownerid, secret, name, name)).fetchone()
+            if owner is None:
+                owner = con.execute(
+                    "SELECT api_key, appid FROM owners WHERE owner_id=? AND secret=?",
+                    (ownerid, secret)).fetchone()
             con.close()
             if not owner:
                 return (None, None, "invalid ownerid/secret", 401)
