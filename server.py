@@ -598,7 +598,8 @@ class Handler(SimpleHTTPRequestHandler):
                         (acct, ownerid, secret, apikey))
                     break
                 except Exception:
-                    ownerid = _gen_owner_id(raw + str(attempt))
+                    con.rollback()
+                    ownerid = _gen_owner_id(raw + str(attempt) + str(secret)[:3])
         else:
             try:
                 con.execute(
