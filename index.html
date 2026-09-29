@@ -59,7 +59,6 @@
 .agree a:hover { text-decoration: underline; }
 .auth-card { padding: 28px 32px 20px; }
 .auth-logo { margin-bottom: 16px; }
-.auth-logo-img { max-height: 62px; }
 .field { margin-bottom: 12px; }
 .auth-divider { margin: 12px 0 10px; }
 .agree input[type="checkbox"] { appearance: none; -webkit-appearance: none; width: 14px; height: 14px; flex: none; margin-top: 1px; border: 1.5px solid #4a4a52; border-radius: 4px; background: #17171c; cursor: pointer; transition: all .15s ease; }
@@ -145,7 +144,7 @@ function onLoginLang(code) {
    Setup: Google Cloud Console -> Credentials -> OAuth client ID (Web application)
    -> add Authorized JS origin (your GitHub Pages URL, e.g. https://yourname.github.io)
    -> paste the Client ID below (ends with .apps.googleusercontent.com) */
-const GOOGLE_CLIENT_ID = "456607613890-t62pipfdig60h4l5o1uleg9st4isunnn.apps.googleusercontent.com";
+const GOOGLE_CLIENT_ID = "456607613890-1a8a0t1knf2k4s0hm3qcn89mni15e1pp.apps.googleusercontent.com";
 
 function onGoogleCredential(res) {
   if (!res || !res.credential) return showAlert(t('google_failed'), 'error');
