@@ -590,16 +590,19 @@ class Handler(SimpleHTTPRequestHandler):
         if not apikey:
             apikey = _gen_key("ISHU")
         if USING_PG:
-            for attempt in range(4):
-                try:
-                    con.execute(
-                        "INSERT INTO accounts (acct, ownerid, secret, apikey)"
-                        " VALUES (?,?,?,?) ON CONFLICT (acct) DO NOTHING",
-                        (acct, ownerid, secret, apikey))
+            for attempt in range(6):
+                held = con.execute("SELECT acct FROM accounts WHERE ownerid=?",
+                                   (ownerid,)).fetchone()
+                if not held or held["acct"] == acct:
                     break
-                except Exception:
-                    con.rollback()
-                    ownerid = _gen_owner_id(raw + str(attempt) + str(secret)[:3])
+                ownerid = _gen_owner_id(raw + str(attempt) + str(secret)[:3])
+            try:
+                con.execute(
+                    "INSERT INTO accounts (acct, ownerid, secret, apikey)"
+                    " VALUES (?,?,?,?) ON CONFLICT (acct) DO NOTHING",
+                    (acct, ownerid, secret, apikey))
+            except Exception:
+                con.rollback()
         else:
             try:
                 con.execute(
