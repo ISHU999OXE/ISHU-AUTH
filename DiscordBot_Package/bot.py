@@ -630,6 +630,41 @@ async def mykey_cmd(interaction: discord.Interaction):
             pass
 
 
+# ── /resethwid command — SWID device reset ────────────────────────────────
+# Normal user: apni key ka SWID reset, once per 24h (server enforce karta hai).
+# Owner: unlimited, aur optional target username par reset kar sakta hai.
+@tree.command(name="resethwid", description="Reset your device (SWID) to log in on a new PC (once per 24h)")
+async def resethwid_cmd(interaction: discord.Interaction, username: str | None = None):
+    try:
+        is_owner = interaction.user.id == BOT_OWNER
+        target = str(interaction.user.id)
+        actor = "owner" if is_owner else "user"
+        if is_owner and username and username.strip():
+            target = username.strip()
+        payload = {
+            "name": NAME, "ownerid": OWNERID, "secret": SECRET, "version": VERSION,
+            "user": target, "as": actor,
+        }
+        data = await _api_post(f"{SERVER}/api/resethwid", payload)
+        if not data.get("ok"):
+            await _bootstrap()
+            data = await _api_post(f"{SERVER}/api/resethwid", payload)
+        if data.get("ok"):
+            await interaction.response.send_message(
+                "\u2705 **SWID Reset Done** \u2014 ab aap apne naye PC/device pe login kar sakte hain.",
+                ephemeral=True)
+        else:
+            await interaction.response.send_message(
+                f"\u274c {data.get('error') or 'SWID reset failed.'}",
+                ephemeral=True)
+    except Exception:
+        try:
+            await interaction.response.send_message(
+                "\u274c Something went wrong. Please try again.", ephemeral=True)
+        except Exception:
+            pass
+
+
 # ── /status command — check cooldown ───────────────────────────────────────
 @tree.command(name="status", description="Check how long until you can get a new key")
 async def status_cmd(interaction: discord.Interaction):

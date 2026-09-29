@@ -18,6 +18,7 @@ Endpoints:
   GET  /api/licenses?appid=      header: x-api-key
   POST /api/license              {key, appid, username, password, type, duration, hwid}
   POST /api/license/resethwid    {key, appid, id}
+  POST /api/resethwid            {key, appid, user, as?}  (as=user -> 1x/24h)
   POST /api/license/renew        {key, appid, id, duration}
   POST /api/license/ban          {key, appid, id, banned}
   DELETE /api/license/<id>       body: {key, appid, id}
@@ -61,6 +62,21 @@ DUR_MS = {
 }
 
 SECRET_PEPPER = "ISHU-AUTH-2026"
+
+HWID_RESET_WINDOW_MS = 24 * 3600 * 1000
+
+
+def _fmt_ms(ms):
+    s = max(0, int(ms // 1000))
+    h, m = divmod(s // 60, 60)
+    out = []
+    if h:
+        out.append(f"{h}h")
+    if m:
+        out.append(f"{m}m")
+    if not out:
+        out.append(f"{s}s")
+    return " ".join(out)
 
 
 def sha(s):
@@ -233,6 +249,7 @@ def db_init():
                         " hwid_locked INTEGER DEFAULT 1, duration TEXT, expires_at BIGINT,"
                         " created_at BIGINT, last_login BIGINT, banned INTEGER DEFAULT 0)")
             cur.execute("ALTER TABLE licenses ADD COLUMN IF NOT EXISTS hwid_locked INTEGER DEFAULT 1")
+            cur.execute("ALTER TABLE licenses ADD COLUMN IF NOT EXISTS hwid_reset_at BIGINT")
             cur.execute("CREATE TABLE IF NOT EXISTS shortlink_tasks ("
                         "token TEXT PRIMARY KEY, user_id TEXT, ltype TEXT, destination TEXT,"
                         " created_at BIGINT, completed INTEGER DEFAULT 0, completed_at BIGINT, ip TEXT)")
@@ -276,6 +293,8 @@ def db_init():
     cols = [r[1] for r in con.execute("PRAGMA table_info(licenses)")]
     if "hwid_locked" not in cols:
         con.execute("ALTER TABLE licenses ADD COLUMN hwid_locked INTEGER DEFAULT 1")
+    if "hwid_reset_at" not in cols:
+        con.execute("ALTER TABLE licenses ADD COLUMN hwid_reset_at INTEGER")
     con.execute("""
         CREATE TABLE IF NOT EXISTS shortlink_tasks (
             token TEXT PRIMARY KEY,
@@ -542,6 +561,9 @@ class Handler(SimpleHTTPRequestHandler):
 
         if p.path == "/api/license/resethwid":
             return self._send_json(self._mutate(body, action="hwid"))
+
+        if p.path == "/api/resethwid":
+            return self._send_json(self._resethwid(body))
 
         if p.path == "/api/license/renew":
             return self._send_json(self._mutate(body, action="renew"))
@@ -873,7 +895,9 @@ class Handler(SimpleHTTPRequestHandler):
             con.close()
             return fail("license not found", 404)
         if action == "hwid":
-            con.execute("UPDATE licenses SET hwid=NULL WHERE id=?", (lid,))
+            now = int(datetime.datetime.now().timestamp() * 1000)
+            con.execute("UPDATE licenses SET hwid=NULL, hwid_reset_at=? WHERE id=?",
+                        (now, lid))
             msg = "hwid reset"
         elif action == "renew":
             duration = body.get("duration") or "permanent"
@@ -900,6 +924,44 @@ class Handler(SimpleHTTPRequestHandler):
             return ok(message="deleted")
         con.commit(); con.close()
         return ok(message=msg)
+
+    def _resethwid(self, body):
+        """SWID reset for a BUYER's license. Normal users (as=user) may reset
+        once every 24h; the owner (as=owner, or dashboard flow) is unlimited.
+        The caller is still owner-authorized, but the 24h cap is enforced
+        server-side so the same license can't be reset forever."""
+        key, appid, err, code = self._resolve_auth(body)
+        if err:
+            return fail(err, code)
+        user = (body.get("user") or "").strip()
+        if not user:
+            return fail("user required")
+        actor = (body.get("as") or "owner").strip().lower()
+        con = db()
+        row = con.execute(
+            "SELECT * FROM licenses WHERE appid=? AND (username=? OR license_key=?)",
+            (appid, user, user)).fetchone()
+        if not row:
+            con.close()
+            return fail("license not found", 404)
+        if row["banned"]:
+            con.close()
+            return fail("license banned", 403)
+        now = int(datetime.datetime.now().timestamp() * 1000)
+        last = row["hwid_reset_at"]
+        if actor != "owner" and last:
+            waited = now - int(last)
+            if waited < HWID_RESET_WINDOW_MS:
+                remaining = HWID_RESET_WINDOW_MS - waited
+                con.close()
+                return fail("SWID reset allowed once every 24 hours. Try again in %s." %
+                            _fmt_ms(remaining))
+        con.execute("UPDATE licenses SET hwid=NULL, hwid_reset_at=? WHERE id=?",
+                    (now, row["id"]))
+        con.commit(); con.close()
+        if actor != "owner":
+            return ok(message="swid reset ok")
+        return ok(message="swid reset ok (owner)")
 
     def _verify(self, body):
         key, appid, err, code = self._resolve_auth(body)
