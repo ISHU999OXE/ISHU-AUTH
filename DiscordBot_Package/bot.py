@@ -5,7 +5,7 @@ choose License Key or Username+Password, then must REALLY complete a VPLINK
 link. Completion is verified server-side (callback hit) — no "I completed"
 button — and the key is auto-DM'd when it fires.
 """
-import os, json, time, asyncio, secrets
+import os, json, time, asyncio, secrets, re
 from pathlib import Path
 
 import aiohttp
@@ -226,6 +226,96 @@ def _dm_text(data: dict, expires: str) -> str:
         f"**Your Access Credentials:**\n{creds}\n\n"
         f"\u23f1\ufe0f **Expires:** {expires or 'Permanent'}"
         "\n\n\U0001f4dd *Please keep your credentials safe and do not share them with anyone.*"
+    )
+
+
+# ── License lookup / status helpers ─────────────────────────────────────────
+async def _license_rows() -> list:
+    """Fetch every license for this app (owner-authed). Returns a list of rows
+    (username, license_key, type, expires_at ms, hwid, last_login, ...)."""
+    rows: list = []
+    if not HTTP:
+        return rows
+    try:
+        async with HTTP.get(
+            f"{SERVER}/api/licenses?appid={NAME}",
+            headers={"x-api-key": MASTER_KEY},
+            timeout=aiohttp.ClientTimeout(total=20)) as r:
+            data = await r.json()
+        if isinstance(data, dict) and data.get("ok"):
+            rows = data.get("list") or []
+    except Exception:
+        pass
+    return rows
+
+
+async def _hwid_reset(username: str, actor: str) -> dict:
+    """Reset HWID for a license. actor='user' -> 1x/24h; actor='owner' -> unlimited."""
+    payload = {
+        "name": NAME, "ownerid": OWNERID, "secret": SECRET, "version": VERSION,
+        "user": username, "as": actor,
+    }
+    data = await _api_post(f"{SERVER}/api/resethwid", payload)
+    if not data.get("ok"):
+        await _bootstrap()
+        data = await _api_post(f"{SERVER}/api/resethwid", payload)
+    return data
+
+
+def _time_left(ms: int) -> str:
+    s = int(max(0, ms // 1000))
+    d, h = divmod(s // 3600, 24)
+    h, m = divmod(h, 60)
+    if d:
+        return f"{d}d {h}h {m}m"
+    if h:
+        return f"{h}h {m}m"
+    if m:
+        return f"{m}m"
+    return f"{s}s"
+
+
+def _lic_status(row: dict):
+    """Returns (status_line, is_active)."""
+    exp = row.get("expires_at")
+    now = int(time.time() * 1000)
+    if not exp:
+        return "\U0001f7e2 **Lifetime** (Active forever)", True
+    left = int(exp) - now
+    if left > 0:
+        return f"\U0001f7e2 **Active** \u2014 Time left: `{_time_left(left)}`", True
+    return "\U0001f534 **Expired**", False
+
+
+def _lic_cred(row: dict) -> str:
+    if row.get("type") == "user":
+        return f"**Username:** `{row.get('username', '')}`"
+    return f"**License Key:** `{row.get('license_key', '')}`"
+
+
+def _pick_license(rows: list, username: str):
+    mine = [r for r in rows if (r.get("username") or "") == username]
+    if not mine:
+        return None
+    now = int(time.time() * 1000)
+    live = [r for r in mine if not r.get("expires_at") or int(r["expires_at"]) > now]
+    return max(live or mine, key=lambda r: int(r.get("expires_at") or 0))
+
+
+def _user_detail(row: dict) -> str:
+    status, _ = _lic_status(row)
+    exp = row.get("expires_at")
+    exp_line = "Permanent" if not exp else f"<t:{int(int(exp) // 1000)}:f>"
+    last = row.get("last_login")
+    last_line = "Never" if not last else f"<t:{int(int(last) // 1000)}:R>"
+    return (
+        f"**\U0001f4dd {row.get('username', '')}**\n"
+        f"- {status}\n"
+        f"- Expires: {exp_line}\n"
+        f"- Type: `{row.get('type')}`\n"
+        f"- HWID bound: `{row.get('hwid') or 'no'}`\n"
+        f"- Last login: {last_line}\n\n"
+        f"- {_lic_cred(row)}"
     )
 
 
@@ -581,6 +671,137 @@ class OwnerDurationView(ui.View):
             pass
 
 
+# ── HWID reset views ────────────────────────────────────────────────────────
+class MyKeyHWIDView(ui.View):
+    """Reset button shown under /mykey. Normal user -> 1x/24h; owner -> unlimited."""
+    def __init__(self, username: str, user_id: int):
+        super().__init__(timeout=180)
+        self.username = username
+        self.user_id = user_id
+
+    @ui.button(label="\U0001f504 Reset HWID", style=discord.ButtonStyle.secondary)
+    async def on_reset(self, interaction: discord.Interaction, button: ui.Button):
+        if interaction.user.id != self.user_id:
+            try:
+                return await interaction.response.send_message(
+                    "This button is not for you.", ephemeral=True)
+            except Exception:
+                return
+        try:
+            await interaction.response.defer(ephemeral=True)
+            actor = "owner" if interaction.user.id == BOT_OWNER else "user"
+            data = await _hwid_reset(self.username, actor)
+            if data.get("ok"):
+                rows = await _license_rows()
+                pick = _pick_license(rows, self.username)
+                creds = _lic_cred(pick) if pick else "No key found."
+                await interaction.followup.send(
+                    f"\U0001f504 **HWID Reset Done**\n\n"
+                    f"{creds}\n\n"
+                    f"Your key can now be used on one new device.", ephemeral=True)
+            else:
+                await interaction.followup.send(
+                    f"\u274c {data.get('error') or 'HWID reset failed. Please try again.'}",
+                    ephemeral=True)
+        except Exception:
+            try:
+                await interaction.followup.send(
+                    "\u274c Something went wrong. Please try again.", ephemeral=True)
+            except Exception:
+                pass
+
+
+class OwnerUserResetView(ui.View):
+    """Owner-only: reset a chosen user's HWID (unlimited)."""
+    def __init__(self, username: str):
+        super().__init__(timeout=180)
+        self.username = username
+
+    @ui.button(label="\U0001f504 Reset HWID (Owner)", style=discord.ButtonStyle.danger)
+    async def on_reset(self, interaction: discord.Interaction, button: ui.Button):
+        if interaction.user.id != BOT_OWNER:
+            try:
+                return await interaction.response.send_message(
+                    "Owner only.", ephemeral=True)
+            except Exception:
+                return
+        try:
+            await interaction.response.defer(ephemeral=True)
+            data = await _hwid_reset(self.username, "owner")
+            if data.get("ok"):
+                rows = await _license_rows()
+                pick = _pick_license(rows, self.username)
+                creds = _lic_cred(pick) if pick else "No key found."
+                await interaction.followup.send(
+                    f"\U0001f504 **HWID Reset Done**\n\n{creds}", ephemeral=True)
+            else:
+                await interaction.followup.send(
+                    f"\u274c {data.get('error') or 'HWID reset failed.'}", ephemeral=True)
+        except Exception:
+            try:
+                await interaction.followup.send(
+                    "\u274c Something went wrong. Please try again.", ephemeral=True)
+            except Exception:
+                pass
+
+
+class UserSelectView(ui.View):
+    """Owner /user: pick a user to see their key + reset their HWID."""
+    def __init__(self, rows: list):
+        super().__init__(timeout=180)
+        self.rows = rows
+        now = int(time.time() * 1000)
+        best = {}
+        for r in rows:
+            u = (r.get("username") or "").strip()
+            if not u:
+                continue
+            exp = r.get("expires_at")
+            key = u
+            if key not in best or int(exp or 0) > int(best[key].get("expires_at") or 0):
+                best[key] = r
+        users = sorted(best.values(), key=lambda r: int(r.get("last_login") or 0), reverse=True)
+        truncated = len(users) > 25
+        opts = []
+        for r in users[:25]:
+            exp = r.get("expires_at")
+            if not exp:
+                st = "Lifetime"
+            elif int(exp) > now:
+                st = "Active"
+            else:
+                st = "Expired"
+            desc = f"{st} \u00b7 {r.get('type', 'license')}"
+            opts.append(discord.SelectOption(
+                label=r["username"][:100], value=str(r["username"]), description=desc[:100]))
+        select = ui.Select(placeholder="Choose a user...", options=opts)
+        selected_text = ("Showing first 25 users.\n" if truncated else "")
+        self.selected_text = selected_text
+
+        async def on_select(interaction: discord.Interaction):
+            if interaction.user.id != BOT_OWNER:
+                return await interaction.response.send_message(
+                    "Owner only.", ephemeral=True)
+            try:
+                await interaction.response.defer(ephemeral=True)
+                username = select.values[0]
+                row = best.get(username)
+                if not row:
+                    return await interaction.followup.send(
+                        "User not found.", ephemeral=True)
+                await interaction.followup.send(
+                    _user_detail(row), view=OwnerUserResetView(username), ephemeral=True)
+            except Exception:
+                try:
+                    await interaction.followup.send(
+                        "\u274c Something went wrong. Please try again.", ephemeral=True)
+                except Exception:
+                    pass
+
+        select.callback = on_select
+        self.add_item(select)
+
+
 # ── /key command ────────────────────────────────────────────────────────────
 @tree.command(name="key", description="Generate or claim a key")
 async def key_cmd(interaction: discord.Interaction):
@@ -611,29 +832,68 @@ async def key_cmd(interaction: discord.Interaction):
             pass
 
 
-# ── /mykey command — view your active key ───────────────────────────────────
-@tree.command(name="mykey", description="Show your active key and expiry")
+# ── /mykey command — show your key + status ───────────────────────────────
+@tree.command(name="mykey", description="Show your key, its status and a HWID reset option")
 async def mykey_cmd(interaction: discord.Interaction):
     try:
-        info = DATA["last_keys"].get(str(interaction.user.id))
-        if not info:
-            return await interaction.response.send_message(
-                "You don't have a key yet. Use `/key` to generate one.", ephemeral=True)
-        await interaction.response.send_message(
-            f"**Your Active Key**\n{info['body']}\nExpires: {info['expires']}", ephemeral=True
-        )
+        await interaction.response.defer(ephemeral=True)
+        rows = await _license_rows()
+        uname = f"dc_{interaction.user.id}"
+        pick = _pick_license(rows, uname)
+        if not pick:
+            return await interaction.followup.send(
+                "\U0001f511 **Please generate a key first.**\n\n"
+                "You haven't generated any key yet. Use `/key` to create one.",
+                ephemeral=True)
+        status, _ = _lic_status(pick)
+        creds = _lic_cred(pick)
+        if pick.get("type") == "user":
+            info = DATA["last_keys"].get(str(interaction.user.id))
+            if info:
+                m = re.search(r"Password\s*\n`([^`]+)`", str(info.get("body", "")))
+                if m and uname in str(info.get("body", "")):
+                    creds += f"\n**Password:** `{m.group(1)}`"
+        exp = pick.get("expires_at")
+        exp_line = "Permanent" if not exp else f"<t:{int(int(exp) // 1000)}:f>"
+        await interaction.followup.send(
+            f"**Your Key**\n\n{creds}\n\n{status}\nExpires: {exp_line}\n\n"
+            "Press **\U0001f504 Reset HWID** below to log in on a new device "
+            "(`/resethwid` works too).",
+            view=MyKeyHWIDView(uname, interaction.user.id), ephemeral=True)
     except Exception:
         try:
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 "\u274c Something went wrong. Please try again.", ephemeral=True)
         except Exception:
             pass
 
 
-# ── /resethwid command — SWID device reset ────────────────────────────────
-# Normal user: apni key ka SWID reset, once per 24h (server enforce karta hai).
+# ── /user command — owner: browse all users' keys ──────────────────────────
+@tree.command(name="user", description="Owner: view every user who generated a key")
+async def user_cmd(interaction: discord.Interaction):
+    try:
+        if interaction.user.id != BOT_OWNER:
+            return await interaction.response.send_message(
+                "\U0001f6ab This command is for the owner only.", ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
+        rows = await _license_rows()
+        if not rows:
+            return await interaction.followup.send(
+                "No keys have been generated yet.", ephemeral=True)
+        await interaction.followup.send(
+            "Select a user to view their key:", view=UserSelectView(rows), ephemeral=True)
+    except Exception:
+        try:
+            await interaction.followup.send(
+                "\u274c Something went wrong. Please try again.", ephemeral=True)
+        except Exception:
+            pass
+
+
+# ── /resethwid command — HWID device reset ────────────────────────────────
+# Normal user: apni key ka HWID reset, once per 24h (server enforce karta hai).
 # Owner: unlimited, aur optional target username par reset kar sakta hai.
-@tree.command(name="resethwid", description="Reset your device (SWID) to log in on a new PC (once per 24h)")
+@tree.command(name="resethwid", description="Reset your device (HWID) to log in on a new PC (once per 24h)")
 async def resethwid_cmd(interaction: discord.Interaction, username: str | None = None):
     try:
         is_owner = interaction.user.id == BOT_OWNER
@@ -651,11 +911,11 @@ async def resethwid_cmd(interaction: discord.Interaction, username: str | None =
             data = await _api_post(f"{SERVER}/api/resethwid", payload)
         if data.get("ok"):
             await interaction.response.send_message(
-                "\u2705 **SWID Reset Done** \u2014 ab aap apne naye PC/device pe login kar sakte hain.",
+                "\u2705 **HWID Reset Done** \u2014 ab aap apne naye PC/device pe login kar sakte hain.",
                 ephemeral=True)
         else:
             await interaction.response.send_message(
-                f"\u274c {data.get('error') or 'SWID reset failed.'}",
+                f"\u274c {data.get('error') or 'HWID reset failed.'}",
                 ephemeral=True)
     except Exception:
         try:

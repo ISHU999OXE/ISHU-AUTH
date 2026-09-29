@@ -926,7 +926,7 @@ class Handler(SimpleHTTPRequestHandler):
         return ok(message=msg)
 
     def _resethwid(self, body):
-        """SWID reset for a BUYER's license. Normal users (as=user) may reset
+        """HWID reset for a BUYER's license. Normal users (as=user) may reset
         once every 24h; the owner (as=owner, or dashboard flow) is unlimited.
         The caller is still owner-authorized, but the 24h cap is enforced
         server-side so the same license can't be reset forever."""
@@ -954,14 +954,14 @@ class Handler(SimpleHTTPRequestHandler):
             if waited < HWID_RESET_WINDOW_MS:
                 remaining = HWID_RESET_WINDOW_MS - waited
                 con.close()
-                return fail("SWID reset allowed once every 24 hours. Try again in %s." %
+                return fail("HWID reset allowed once every 24 hours. Try again in %s." %
                             _fmt_ms(remaining))
         con.execute("UPDATE licenses SET hwid=NULL, hwid_reset_at=? WHERE id=?",
                     (now, row["id"]))
         con.commit(); con.close()
         if actor != "owner":
-            return ok(message="swid reset ok")
-        return ok(message="swid reset ok (owner)")
+            return ok(message="hwid reset ok")
+        return ok(message="hwid reset ok (owner)")
 
     def _verify(self, body):
         key, appid, err, code = self._resolve_auth(body)
