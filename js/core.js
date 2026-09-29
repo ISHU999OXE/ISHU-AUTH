@@ -181,7 +181,7 @@ function buildApp(user) {
 const Account = {
   serverUrl() {
     if (typeof API_BASE !== 'undefined' && API_BASE) return API_BASE;
-    return 'https://keyuth-web.onrender.com';
+    return 'https://ishuauth.onrender.com';
   },
   freeze(user, acctKey) {
     if (!user) return Promise.resolve(null);

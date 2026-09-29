@@ -30,7 +30,7 @@ STEP 1 - PACKAGE DOWNLOAD
 --------------------------------------------------------
 Panel se "Download Package" button dabao
 ya ye file download karo:
-  https://keyuth-web.onrender.com/IshuAuth_Package.zip
+  https://ishuauth.onrender.com/IshuAuth_Package.zip
 
 Zip me ye files milengi:
   IshuAuth.cs          -> simple SDK (Verify/Create/Reset/Renew/Ban)

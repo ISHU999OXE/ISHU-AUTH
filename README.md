@@ -1,5 +1,10 @@
 # ISHU AUTH
 
+> **© 2026 ISHU — All Rights Reserved.**
+> This project (source code, SDK, API, logo & design) is the original copyrighted work of **ISHU**.
+> Copying, cloning, rebranding or redistribution is **strictly prohibited** — see [LICENSE](LICENSE).
+> Users must accept the **Terms & Conditions / Copyright Policy** shown on the login page before registering.
+
 ISHU AUTH **API Key + License Control Platform** by **ISHU**.
 Unique "HEAT" theme layout with your own accent color.
 Logo: ISHU · ISHU PREMIUM SECURITY LOCK
@@ -105,8 +110,8 @@ A Discord/website bot calls `/api/generate` — the key is created automatically
 ## File structure
 
 ```
-KEYUTH-web/
-├── server.py           # Python stdlib + SQLite backend (live mode)
+ISHU-AUTH/
+├── server.py           # Python stdlib backend (SQLite auto + optional Postgres via DATABASE_URL)
 ├── IshuAuth.cs         # C# SDK (drop-in, no package needed)
 ├── IshuAuth_Package/
 │   ├── IshuAuth.cs     # same SDK

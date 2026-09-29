@@ -35,7 +35,7 @@ STEP 3 — Config file edit karo
      token        → Discord bot ka token (Step 1 se)
      owner_id     → apna Discord User ID (right click → Copy ID)
                     (Developer Mode ON karo: Settings → Advanced)
-     server       → "https://keyuth-web.onrender.com" (default)
+     server       → "https://ishuauth.onrender.com" (default)
      key          → aapka ISHU AUTH MASTER API KEY — bot isse
                     startup pe server pe owner row khud restore
                     karta hai (Render restart/redeploy pe DB reset
@@ -66,7 +66,7 @@ key_hours    → key kitne ghante chalega (default 48)
    {
      "token": "MTIzNDU2Nzg5MDEyMzQ1Njc4.OuZt_AbCdEfGhIjKlMnOp",
      "owner_id": 123456789012345678,
-     "server": "https://keyuth-web.onrender.com",
+     "server": "https://ishuauth.onrender.com",
      "key": "ISHU_fina-Klv1-U4cv-mYUT-714O-Dl5Y-4ABo-ICeF",
      "name": "APP-1LHEK3",
      "ownerid": "IHH231792GMAILCOM-OFPDR",
@@ -352,7 +352,7 @@ Solution: vplink_api me SIRF VPLINK ka token do — wo 40-char ka
 
 Problem: Key generate nahi ho raha
 Solution: server online hai? check:
-          https://keyuth-web.onrender.com/api/ping
+          https://ishuauth.onrender.com/api/ping
 
 Problem: DM nahi ja raha
 Solution: User ko bot ko DM allow karna hoga ya bot
@@ -362,6 +362,6 @@ Solution: User ko bot ko DM allow karna hoga ya bot
 SUPPORT
 ===============================================================
 
-https://github.com/ihh231792-coder/KEYUTH-web
+https://github.com/ISHU999OXE/ISHU-AUTH
 
 ===============================================================

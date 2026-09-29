@@ -35,7 +35,7 @@ namespace ISHU_Auth
 
         /// <summary>ISHU AUTH server — default is the live cloud.
         /// Change this if you host server.py yourself.</summary>
-        public static string Server = "https://keyuth-web.onrender.com";
+        public static string Server = "https://ishuauth.onrender.com";
 
         /// <summary>Last call's result (success / message / ...).</summary>
         public data response = new data();
