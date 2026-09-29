@@ -81,6 +81,7 @@ const GoogleAuth = {
       DB.save(db);
     }
     Session.set(user.id, user.username);
+    Account.freeze(user, profile.email || profile.name || profile.sub || user.username);
     return { ok: true, user };
   },
   signOut() {
@@ -173,6 +174,49 @@ function buildApp(user) {
   return app;
 }
 
+/* ---------- Lifetime OwnerID: frozen per account on the server ---------- */
+// The FIRST values an account (username/email) gets are stored on the server
+// forever. Every later login of that SAME account returns the SAME OwnerID,
+// Secret and API key — on any device, after any update, for life.
+const Account = {
+  serverUrl() {
+    if (typeof API_BASE !== 'undefined' && API_BASE) return API_BASE;
+    return 'https://keyuth-web.onrender.com';
+  },
+  freeze(user, acctKey) {
+    if (!user) return Promise.resolve(null);
+    const key = (acctKey || user.username || '').toString();
+    if (!key) return Promise.resolve(null);
+    return fetch(this.serverUrl() + '/api/account', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: key, ownerid: user.ownerId, secret: user.secretId, apikey: user.apiKey })
+    }).then(r => r.json()).then(d => {
+      if (!d || !d.ok || !d.account) return null;
+      const a = d.account;
+      const changed = (user.ownerId !== a.ownerid || user.secretId !== a.secret || user.apiKey !== a.apikey);
+      const db = DB.load();
+      const rec = db.users.find(u => u.id === user.id);
+      if (rec) { rec.acctKey = key; rec.ownerId = a.ownerid; rec.secretId = a.secret; rec.apiKey = a.apikey; }
+      user.acctKey = key;
+      user.ownerId = a.ownerid;
+      user.secretId = a.secret;
+      user.apiKey = a.apikey;
+      if (changed || rec) {
+        db.apps.forEach(app => {
+          if (app.ownerId === user.id) {
+            app.ownerTag = user.ownerId;
+            app.secretId = user.secretId;
+            app.apiKey = user.apiKey;
+          }
+        });
+        DB.save(db);
+      }
+      return a;
+    }).catch(() => null);
+  }
+};
+
 /* ---------- Auth ---------- */
 const Auth = {
   register(username, password) {
@@ -203,6 +247,7 @@ const Auth = {
     db.apps.push(app);
     DB.save(db);
     Session.set(userId, username);
+    Account.freeze(user, username);
     return { ok: true, user, app };
   },
 
@@ -213,6 +258,7 @@ const Auth = {
     if (!user) return { ok: false, msg: 'User not found.' };
     if (user.password !== Crypto.hash(password)) return { ok: false, msg: 'Incorrect password.' };
     Session.set(user.id, user.username);
+    Account.freeze(user, user.acctKey || user.username);
     return { ok: true, user };
   },
 

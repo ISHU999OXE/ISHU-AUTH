@@ -237,6 +237,9 @@ def db_init():
                         "token TEXT PRIMARY KEY, user_id TEXT, ltype TEXT, destination TEXT,"
                         " created_at BIGINT, completed INTEGER DEFAULT 0, completed_at BIGINT, ip TEXT)")
             cur.execute("ALTER TABLE shortlink_tasks ADD COLUMN IF NOT EXISTS ip TEXT")
+            cur.execute("CREATE TABLE IF NOT EXISTS accounts ("
+                        "acct TEXT PRIMARY KEY, ownerid TEXT UNIQUE NOT NULL,"
+                        " secret TEXT NOT NULL, apikey TEXT NOT NULL)")
             con.commit()
         finally:
             con.close()
@@ -288,6 +291,14 @@ def db_init():
     tcols = [r[1] for r in con.execute("PRAGMA table_info(shortlink_tasks)")]
     if "ip" not in tcols:
         con.execute("ALTER TABLE shortlink_tasks ADD COLUMN ip TEXT")
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS accounts (
+            acct TEXT PRIMARY KEY,
+            ownerid TEXT UNIQUE NOT NULL,
+            secret TEXT NOT NULL,
+            apikey TEXT NOT NULL
+        )
+    """)
     con.commit()
     con.close()
 
@@ -315,6 +326,18 @@ def _flag(v, default=True):
     if v is None:
         return default
     return str(v).lower() not in ("0", "false", "no", "")
+
+
+def _gen_owner_id(username):
+    base = re.sub(r"[^A-Za-z0-9]", "", username).upper()[:24] or "ISHU"
+    import random
+    suffix = "".join(random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ", k=5))
+    return base + "-" + suffix
+
+
+def _gen_key(prefix):
+    chunks = "-".join(uuid.uuid4().hex[:4].upper() for _ in range(8))
+    return (prefix.upper() + "_" + chunks) if prefix else chunks
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -493,6 +516,9 @@ class Handler(SimpleHTTPRequestHandler):
             con.commit(); con.close()
             return self._send_json(ok(appid=appid, owner_id=ownerid, secret=secret, version=version, appname=appname))
 
+        if p.path == "/api/account":
+            return self._send_json(self._account(body))
+
         if p.path == "/api/init":
             return self._send_json(self._init(body))
 
@@ -537,6 +563,53 @@ class Handler(SimpleHTTPRequestHandler):
         return self._send_json(self._mutate(body, action="delete", lic_id=m.group(1)))
 
     # ---------------- helpers ----------------
+
+    # ISHU AUTH: ONE lifetime OwnerID per account (username/email).
+    # The FIRST set of values seen for a username is frozen forever on the
+    # server; every later login of the SAME account gets back the SAME
+    # OwnerID + Secret + API key — on any device, after any update, forever.
+    def _account(self, body):
+        raw = (body.get("username") or "").strip()
+        if not raw:
+            return fail("username required")
+        acct = raw.lower()
+        ownerid = (body.get("ownerid") or "").strip()
+        secret = (body.get("secret") or "").strip()
+        apikey = (body.get("apikey") or "").strip()
+        con = db()
+        row = con.execute("SELECT ownerid, secret, apikey FROM accounts WHERE acct=?",
+                          (acct,)).fetchone()
+        if row:
+            con.close()
+            return ok(account={"acct": acct, "ownerid": row["ownerid"],
+                               "secret": row["secret"], "apikey": row["apikey"]}, created=False)
+        if not ownerid or not re.fullmatch(r"[A-Za-z0-9\-]{6,64}", ownerid):
+            ownerid = _gen_owner_id(raw)
+        if not secret:
+            secret = _gen_key("SEC")
+        if not apikey:
+            apikey = _gen_key("ISHU")
+        if USING_PG:
+            con.execute(
+                "INSERT INTO accounts (acct, ownerid, secret, apikey)"
+                " VALUES (?,?,?,?) ON CONFLICT (acct) DO NOTHING",
+                (acct, ownerid, secret, apikey))
+        else:
+            try:
+                con.execute(
+                    "INSERT INTO accounts (acct, ownerid, secret, apikey)"
+                    " VALUES (?,?,?,?)",
+                    (acct, ownerid, secret, apikey))
+            except Exception:
+                pass
+        row = con.execute("SELECT ownerid, secret, apikey FROM accounts WHERE acct=?",
+                          (acct,)).fetchone()
+        con.commit(); con.close()
+        if not row:
+            return fail("could not create account", 500)
+        return ok(account={"acct": acct, "ownerid": row["ownerid"],
+                           "secret": row["secret"], "apikey": row["apikey"]}, created=True)
+
     def _authorize(self, key, appid):
         con = db()
         owner = con.execute("SELECT 1 FROM owners WHERE api_key=? AND appid=?", (key, appid)).fetchone()
