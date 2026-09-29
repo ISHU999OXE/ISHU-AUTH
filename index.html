@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <meta name="google-site-verification" content="DAOOvTN4nGvysMKszU6Mtx7qOfkQoF26w_fnijKdJoI" />
 <title>ISHU AUTH | Key &amp; License Management System - Sign In</title>
 <meta name="description" content="ISHU AUTH - Premium key &amp; license management panel. Login with Google, manage API keys, users and licenses, HWID lock, key rotation, renew and ban - all in one control panel.">
@@ -183,7 +186,7 @@ function googlePopupLogin() {
   var state = Math.random().toString(36).slice(2) + Date.now();
   var nonce = Math.random().toString(36).slice(2) + Date.now();
   try { sessionStorage.setItem('ishu_gis_state', state); } catch(e) {}
-  var redirectUri = window.location.origin + window.location.pathname.replace(/index\.html$/,'').replace(/[^\/]$/,'$&/');
+  var redirectUri = (window.location.origin + window.location.pathname.replace(/index\.html$/,'')).replace(/\/+$/,'');
   var qs = new URLSearchParams({
     client_id: GOOGLE_CLIENT_ID, redirect_uri: redirectUri,
     response_type: 'id_token', scope: 'openid email profile',
