@@ -1,0 +1,128 @@
+========================================================
+  ISHU AUTH - INSTALL & USE GUIDE (TXT)
+  Jo bhi package download kare, uske liye pura tarika
+========================================================
+
+PACKAGE GUID  : 8CD236B4-A8C4-417D-AEDD-3B4D91CDB61B
+PACKAGE NAME  : ISHU_Auth_Package
+SDK NAMESPACE : ISHU_Auth
+SDK CLASS     : api
+OWNER         : ISHU
+
+--------------------------------------------------------
+WHAT YOU NEED BEFORE YOU START
+--------------------------------------------------------
+Aapko apne app/project ke liye sirf 4 values chahiye,
+jo aapko aapke ISHU AUTH panel se milti hain:
+
+  1) APP ID     (jaise: APP-1LHEK3)
+  2) OWNER ID   (jaise: IHH231792GMAILCOM-OFPDR)
+  3) SECRET ID  (jaise: SEC_fV0a-...)
+  4) VERSION    (jaise: 1.0)
+
+Ye values panel ke:
+  -> Installation page (right side "Your values" box) me
+  -> Apps page (app card ke andar, copy buttons ke saath)
+  dono jagah milti hain.
+
+--------------------------------------------------------
+STEP 1 - PACKAGE DOWNLOAD
+--------------------------------------------------------
+Panel se "Download Package" button dabao
+ya ye file download karo:
+  https://keyuth-web.onrender.com/IshuAuth_Package.zip
+
+Zip me ye files milengi:
+  IshuAuth.cs          -> simple SDK (Verify/Create/Reset/Renew/Ban)
+  ISHU_Auth_API.cs     -> name/ownerid/secret/version style SDK
+  Example.cs           -> working example
+  README.txt           -> SDK details
+  INSTALL-GUIDE.txt    -> ye file
+  examples/ConsoleDemo -> ya ConsoleDemo (dll/exe) bhi dekh sakte ho
+
+--------------------------------------------------------
+STEP 2 - ADD TO YOUR PROJECT (C# / WinForms / Console)
+--------------------------------------------------------
+1. Zip extract karo
+2. IshuAuth.cs (ya ISHU_Auth_API.cs) ko apne project ke
+   source folder me copy karo (jaise apne .csproj/.sln ke paas)
+3. Visual Studio me project khula hai to us folder ko add karo
+   (ya bas file ko project-folder me daal do - build karne pe
+   automatically mil jayegi)
+
+--------------------------------------------------------
+STEP 3 - LOGIN CODE (4 lines)
+--------------------------------------------------------
+using ISHU_Auth;
+
+public static api IshuAuthApp = new api(
+    name:    "APP-1LHEK3",                    <-- apna APP ID
+    ownerid: "IHH231792GMAILCOM-OFPDR",       <-- apna OWNER ID
+    secret:  "SEC_fV0a-...",                  <-- apna SECRET ID
+    version: "1.0"                            <-- apna VERSION
+);
+
+// login:
+var res = await IshuAuthApp.login("user123", "pass123");
+if (res.success) Console.WriteLine("LOGIN OK @ " + res.expiry);
+else Console.WriteLine("DENIED: " + res.message);
+
+// HWID auto bheja jata hai (ISHU_Auth_API.cs ka Fingerprint() stable hai —
+// SHA-256 of MachineGuid, SAME PC par hamesha same value, restart pe bhi).
+
+// license key login:
+var lic = await IshuAuthApp.license("LIC_XXXX-....");
+if (lic.success) Console.WriteLine("LOGIN OK @ " + lic.expiry);
+
+--------------------------------------------------------
+STEP 4 - ADMIN CONTROL (from your own app)
+--------------------------------------------------------
+await IshuAuthApp.Create("user2", "pass2", "30d", "user");  // new user
+await IshuAuthApp.CreateKey("30d");                          // new license key
+await IshuAuthApp.Delete(id);                                // delete user/key
+await IshuAuthApp.Ban(id, true);                             // ban
+await IshuAuthApp.Ban(id, false);                            // unban
+await IshuAuthApp.Renew(id, "7d");                           // renew
+await IshuAuthApp.ResetHwid(id);                             // hwid reset
+
+(Sab kuch panel ke Users page se bhi ho sakta hai.)
+
+--------------------------------------------------------
+STEP 5 - TEST (bina apna app banaye)
+--------------------------------------------------------
+examples/ConsoleDemo/ folder me ye commands chalao:
+
+  dotnet run --project examples/ConsoleDemo   user pass
+  dotnet run --project examples/ConsoleDemo --license LIC_XXXX-....
+
+bin/Release/net9.0/IshuAuthDemo.exe bhi directly chala sakte ho.
+
+--------------------------------------------------------
+FAIL HO RAHA HAI? FAILURE TABLE
+--------------------------------------------------------
+Dekhne ka message        | Matlab                            | Fix
+-------------------------|-----------------------------------|-----------------------------
+invalid ownerid/secret   | name/ownerid/secret/version galat | panel se phir se copy karo
+invalid username or key  | user/license exist nahi karta     | Users page me phle banao
+subscription expired     | time khatam                        | Renew karo
+user banned              | aapne/owner ne ban kiya hai        | Unban karo
+hwid mismatch            | user doosre PC pe chala raha hai   | ResetHwid karo (sirf tab jab wo PC badle)
+server unreachable       | server URL galat / internet down   | api.Server check karo
+
+--------------------------------------------------------
+NOTE
+--------------------------------------------------------
+- Is package me koi NuGet package ya DLL nahi chahiye -
+  sirf ek .cs file project me add karni hai.
+- IMPORTANT (HWID BUG FIX): Purana SDK GetHashCode() use karta tha,
+  jo .NET me har app launch pe alag value deta hai — isliye same PC
+  par bhi "hwid mismatch" aa kar "Reset HWID" mangta tha. Naye SDK me
+  Fingerprint() SHA-256 based hai: SAME PC = hamesha same HWID.
+  Existing keys ke liye EK baar HWID reset karna hoga (naya SDK lene
+  ke baad), uske baad phir kabhi reset nahi mangega — jab tak PC na badle.
+- Ye package ISHU AUTH platform ke liye hai:
+  jo bhi isse download kare, uske apne panel login se
+  alag alag owner apni app banate hain - sab safe/isolated.
+
+(c) Copyrighted by ISHU
+PACKAGE GUID : 8CD236B4-A8C4-417D-AEDD-3B4D91CDB61B

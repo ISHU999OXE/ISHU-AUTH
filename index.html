@@ -1,0 +1,312 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="google-site-verification" content="DAOOvTN4nGvysMKszU6Mtx7qOfkQoF26w_fnijKdJoI" />
+<title>ISHU AUTH | Key &amp; License Management System - Sign In</title>
+<meta name="description" content="ISHU AUTH - Premium key &amp; license management panel. Login with Google, manage API keys, users and licenses, HWID lock, key rotation, renew and ban - all in one control panel.">
+<meta name="keywords" content="ISHU AUTH, key system, license system, API keys, HWID lock, key management, license management, authentication panel">
+<meta name="author" content="ISHU">
+<meta name="robots" content="index,follow">
+<meta name="theme-color" content="#000000">
+<meta property="og:type" content="website">
+<meta property="og:title" content="ISHU AUTH | Key &amp; License Management System">
+<meta property="og:description" content="Premium key &amp; license management panel - Google login, API keys, users, licenses, HWID lock and more.">
+<meta property="og:url" content="https://ihh231792-coder.github.io/KEYUTH-web/">
+<meta property="og:image" content="https://ihh231792-coder.github.io/KEYUTH-web/logo.png">
+<meta property="og:site_name" content="ISHU AUTH">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="ISHU AUTH | Key &amp; License Management System">
+<meta name="twitter:description" content="Premium key &amp; license management panel - Google login, API keys, users, licenses, HWID lock and more.">
+<meta name="twitter:image" content="https://ihh231792-coder.github.io/KEYUTH-web/logo.png">
+<link rel="canonical" href="https://ihh231792-coder.github.io/KEYUTH-web/">
+<link rel="icon" type="image/png" href="logo.png">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"WebApplication","name":"ISHU AUTH","url":"https://ihh231792-coder.github.io/KEYUTH-web/","logo":"https://ihh231792-coder.github.io/KEYUTH-web/logo.png","description":"ISHU AUTH - Premium key &amp; license management panel with Google login, API keys, users, licenses and HWID lock.","applicationCategory":"UtilitiesApplication","operatingSystem":"Web","offers":{"@type":"Offer","price":"0","priceCurrency":"INR"}}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;800;900&family=Rajdhani:wght@500;600;700&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<link rel="stylesheet" href="css/style.css?v=22">
+</head>
+<body class="auth-body">
+
+<canvas id="bgCanvas"></canvas>
+
+<style>
+#bgCanvas { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+.auth-shell { z-index: 2; }
+.auth-body::before, .auth-body::after { z-index: 0; opacity: 0.5; }
+.auth-lang { display: flex; justify-content: center; margin-bottom: 14px; }
+.auth-lang select { background: var(--bg-3); color: var(--text); border: 1px solid var(--border); border-radius: 9px; padding: 7px 12px; font-family: 'Rajdhani', sans-serif; font-weight: 600; font-size: 14px; cursor: pointer; }
+</style>
+
+<div class="auth-shell">
+  <div class="auth-status">
+    <span>ISHU AUTH</span>
+    <span class="on"><span class="dot"></span><span data-i18n="system_online">system online</span></span>
+  </div>
+
+  <div class="auth-card">
+    <div class="auth-logo">
+      <img class="auth-logo-img" src="logo.png" alt="ISHU AUTH">
+      <h1>ISHU AUTH</h1>
+      <p>ISHU PREMIUM SECURITY LOCK</p>
+    </div>
+
+    <div class="auth-lang">
+      <select id="authLang" onchange="onLoginLang(this.value)" aria-label="Language">
+      </select>
+    </div>
+
+    <div class="alert" id="alertBox"></div>
+
+    <form id="loginForm" novalidate>
+      <div class="field">
+        <label for="username" data-i18n="username">Username</label>
+        <input type="text" id="username" placeholder="username" autocomplete="username">
+      </div>
+      <div class="field">
+        <label for="password" data-i18n="password">Password</label>
+        <input type="password" id="password" placeholder="password" autocomplete="current-password">
+      </div>
+      <button class="btn" type="submit" data-i18n="login">Login</button>
+    </form>
+
+    <div class="auth-divider"><span data-i18n="or_use">or login with</span></div>
+    <div class="g-host" id="gGoing"></div>
+
+    <div class="auth-footer" id="authFooter">
+      <span data-i18n="no_account">No account?</span> <a onclick="showRegister()" data-i18n="register">Register</a>
+    </div>
+  </div>
+
+  <div class="auth-status" style="padding:16px 6px 0;justify-content:center">
+    <span data-i18n="copyright">© v1.0 &middot; Copyrighted by ISHU</span>
+  </div>
+</div>
+
+<script src="js/core.js?v=22"></script>
+<script src="js/settings.js?v=22"></script>
+<script>
+/* ===== login page language select (14 langs) ===== */
+function onLoginLang(code) {
+  Settings.set({ lang: code });
+  syncMode();
+  showAlert(t('saved'), 'ok');
+}
+/* ===== Google Sign-In =====
+   Setup: Google Cloud Console -> Credentials -> OAuth client ID (Web application)
+   -> add Authorized JS origin (your GitHub Pages URL, e.g. https://yourname.github.io)
+   -> paste the Client ID below (ends with .apps.googleusercontent.com) */
+const GOOGLE_CLIENT_ID = "456607613890-t62pipfdig60h4l5o1uleg9st4isunnn.apps.googleusercontent.com";
+
+function onGoogleCredential(res) {
+  if (!res || !res.credential) return showAlert(t('google_failed'), 'error');
+  const prof = GoogleAuth.profileFromJwt(res.credential);
+  if (!prof) return showAlert(t('google_failed'), 'error');
+  if (prof.aud && prof.aud !== GOOGLE_CLIENT_ID) return showAlert(t('google_failed'), 'error');
+  if (prof.exp && Date.now() / 1000 > prof.exp) return showAlert(t('google_failed'), 'error');
+  GoogleAuth.setToken(res.credential);
+  const out = GoogleAuth.upsert(prof);
+  if (!out.ok) return showAlert(out.msg || t('google_failed'), 'error');
+  showAlert(t('welcome_back') + out.user.username + '.', 'success');
+  setTimeout(() => location.href = 'dashboard.html', 600);
+}
+
+function googleUnconfigured() {
+  const host = document.getElementById('gGoing');
+  if (!host) return;
+  host.innerHTML =
+    '<button type="button" class="g-btn g-btn-block" onclick="showAlert(t(\'google_setup\'), \'error\')">' +
+    '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.28-1.93-6.14-4.53H2.18v2.84A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.86 14.1a6.6 6.6 0 0 1 0-4.2V7.06H2.18a11 11 0 0 0 0 9.88l3.68-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15A11 11 0 0 0 2.18 7.06l3.68 2.84c.86-2.6 3.28-4.52 6.14-4.52z"/></svg>' +
+    '<span data-i18n="continue_google">Continue with Google</span></button>';
+}
+var _GIS_LOADED = false;
+function _gisInit() {
+  if (_GIS_LOADED) return;
+  if (window.google && google.accounts && google.accounts.id) {
+    try {
+      google.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: function(){}, auto_select: false });
+    } catch(e) {}
+    _GIS_LOADED = true;
+  }
+}
+function googlePopupLogin() {
+  if (!GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID.indexOf('PASTE_') === 0) { showAlert(t('google_setup'), 'error'); return; }
+  _gisInit();
+  var state = Math.random().toString(36).slice(2) + Date.now();
+  var nonce = Math.random().toString(36).slice(2) + Date.now();
+  try { sessionStorage.setItem('ishu_gis_state', state); } catch(e) {}
+  var redirectUri = window.location.origin + window.location.pathname.replace(/index\.html$/,'').replace(/[^\/]$/,'$&/');
+  var qs = new URLSearchParams({
+    client_id: GOOGLE_CLIENT_ID, redirect_uri: redirectUri,
+    response_type: 'id_token', scope: 'openid email profile',
+    state: state, nonce: nonce, prompt: 'select_account'
+  });
+  var popup = window.open('https://accounts.google.com/o/oauth2/v2/auth?' + qs.toString(), 'google_signin', 'width=500,height=600,scrollbars=yes');
+  if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+    showAlert('Popup blocked — allow popups for this site.', 'error'); return;
+  }
+  var pollTimer = setInterval(function() {
+    try {
+      if (popup.closed) { clearInterval(pollTimer); return; }
+      var url = popup.location.href;
+      if (url && url.indexOf('#') !== -1 && url.indexOf('id_token') !== -1) {
+        clearInterval(pollTimer);
+        var hash = url.split('#')[1];
+        var tp = new URLSearchParams(hash);
+        var idToken = tp.get('id_token');
+        var returnedState = tp.get('state');
+        popup.close();
+        var saved = '';
+        try { saved = sessionStorage.getItem('ishu_gis_state') || ''; sessionStorage.removeItem('ishu_gis_state'); } catch(e) {}
+        if (returnedState === saved && idToken) { onGoogleCredential({ credential: idToken }); }
+        else { showAlert(t('google_failed'), 'error'); }
+      }
+    } catch(e) {}
+  }, 300);
+  setTimeout(function() { clearInterval(pollTimer); try { sessionStorage.removeItem('ishu_gis_state'); } catch(e) {} }, 300000);
+}
+function initGoogle() {
+  if (!GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID.indexOf('PASTE_') === 0) { googleUnconfigured(); return; }
+  var host = document.getElementById('gGoing');
+  if (!host) return;
+  host.innerHTML = '';
+  var btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'g-btn';
+  btn.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.27-4.74 3.27-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.28-1.93-6.14-4.53H2.18v2.84A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.86 14.1a6.6 6.6 0 0 1 0-4.2V7.06H2.18a11 11 0 0 0 0 9.88l3.68-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15A11 11 0 0 0 2.18 7.06l3.68 2.84c.86-2.6 3.28-4.52 6.14-4.52z"/></svg><span data-i18n="continue_google">Continue with Google</span>';
+  btn.onclick = googlePopupLogin;
+  host.appendChild(btn);
+}
+initGoogle();
+/* ===== moving ember particles ===== */
+(function () {
+  const cv = document.getElementById('bgCanvas');
+  const ctx = cv.getContext('2d');
+  let W, H, parts = [];
+  const COLORS = ['255,77,46', '255,176,48', '37,208,255', '255,92,92'];
+  function resize() {
+    W = cv.width = window.innerWidth;
+    H = cv.height = window.innerHeight;
+  }
+  function spawn(y) {
+    for (let i = 0; i < 26; i++) {
+      parts.push({
+        x: Math.random() * W,
+        y: y !== undefined ? y : Math.random() * H,
+        r: 1 + Math.random() * 2.4,
+        vy: 0.2 + Math.random() * 0.7,
+        sway: Math.random() * 0.5 + 0.1,
+        ph: Math.random() * Math.PI * 2,
+        c: COLORS[Math.floor(Math.random() * COLORS.length)],
+        a: 0.25 + Math.random() * 0.5
+      });
+    }
+  }
+  function frame() {
+    ctx.clearRect(0, 0, W, H);
+    for (const p of parts) {
+      p.y -= p.vy;
+      p.ph += p.sway * 0.02;
+      p.x += Math.sin(p.ph) * 0.6;
+      if (p.y < -10) { p.y = H + 8; p.x = Math.random() * W; }
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(' + p.c + ',' + p.a + ')';
+      ctx.shadowColor = 'rgba(' + p.c + ',0.9)';
+      ctx.shadowBlur = 10;
+      ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+    requestAnimationFrame(frame);
+  }
+  resize();
+  spawn();
+  frame();
+  window.addEventListener('resize', resize);
+})();
+
+const alertBox = document.getElementById('alertBox');
+let isRegister = false;
+
+/* popuplate language select */
+(function () {
+  const sel = document.getElementById('authLang');
+  Object.keys(Settings.LANGS).forEach(code => {
+    const o = document.createElement('option');
+    o.value = code;
+    o.textContent = Settings.LANGS[code];
+    if (code === Settings.lang()) o.selected = true;
+    sel.appendChild(o);
+  });
+})();
+
+function showAlert(msg, type) {
+  alertBox.textContent = msg;
+  alertBox.className = 'alert show ' + type;
+}
+
+function syncMode() {
+  const f = document.getElementById('loginForm');
+  if (isRegister) {
+    f.removeAttribute('id');
+    f.innerHTML = `
+      <div class="field">
+        <label for="rU" data-i18n="username">${t('username')}</label>
+        <input type="text" id="rU" placeholder="${t('choose_username')}">
+      </div>
+      <div class="field">
+        <label for="rP" data-i18n="password">${t('password')}</label>
+        <input type="password" id="rP" placeholder="${t('create_password')}">
+      </div>
+      <button class="btn" type="submit">${t('create_account')}</button>`;
+    f.id = 'regForm';
+    document.getElementById('authFooter').innerHTML =
+      t('already_registered') + ' <a onclick="showLogin()" data-i18n="login">' + t('login') + '</a>';
+    document.getElementById('regForm').addEventListener('submit', doRegister);
+  } else {
+    document.getElementById('authFooter').innerHTML =
+      t('no_account') + ' <a onclick="showRegister()" data-i18n="register">' + t('register') + '</a>';
+  }
+}
+
+function showRegister() { isRegister = true; alertBox.className = 'alert'; syncMode(); }
+function showLogin()    { isRegister = false; alertBox.className = 'alert'; location.reload(); }
+
+function doRegister(e) {
+  e.preventDefault();
+  const u = document.getElementById('rU').value;
+  const p = document.getElementById('rP').value;
+  const res = Auth.register(u, p);
+  if (!res.ok) return showAlert(res.msg, 'error');
+  showAlert(t('account_created') + u + '!', 'success');
+  setTimeout(() => location.href = 'dashboard.html', 800);
+}
+
+document.getElementById('loginForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const u = document.getElementById('username').value;
+  const p = document.getElementById('password').value;
+  const res = Auth.login(u, p);
+  if (!res.ok) return showAlert(res.msg, 'error');
+  showAlert(t('welcome_back') + res.user.username + '.', 'success');
+  setTimeout(() => location.href = 'dashboard.html', 600);
+});
+
+if (Session.userId()) location.href = 'dashboard.html';
+
+/* ============ Mouse light (subtle) ============ */
+const glow = document.createElement('div');
+glow.id = 'curGlow';
+document.body.appendChild(glow);
+document.addEventListener('pointermove', e => {
+  glow.style.transform = 'translate(' + e.clientX + 'px, ' + e.clientY + 'px)';
+}, { passive: true });
+
+</script>
+</body>
+</html>

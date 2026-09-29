@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://ihh231792-coder.github.io/KEYUTH-web/sitemap.xml

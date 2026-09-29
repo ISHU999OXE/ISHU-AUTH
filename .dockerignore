@@ -1,0 +1,8 @@
+.git
+__pycache__
+*.pyc
+*.db
+*.rar
+.vs
+*.db-wal
+*.db-shm

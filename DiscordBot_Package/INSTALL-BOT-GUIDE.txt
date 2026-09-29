@@ -1,0 +1,367 @@
+===============================================================
+ISHU AUTH — DISCORD BOT INSTALL GUIDE
+GUID: 5B9E7C31-A8D4-4E2F-B6F1-2D0C9A84E573
+===============================================================
+
+IS bot ka source code hai jo aapke Discord server pe key
+generate karta hai. Normal users ke liye shortener + 48h key,
+aur owner ke liye permanent / custom expiry key.
+
+===============================================================
+SETPY STEP GUIDE (HINGLISH)
+===============================================================
+
+STEP 1 — Bot banao (Discord Developer Portal)
+  1. https://discord.com/developers/applications pe jao
+  2. "New Application" karo — apna naam do (ye aapka bot hoga)
+  3. "Bot" section me jao → "Add Bot"
+  4. Bot ka NAAM aur AVATAR set karo — ye aapka apna bot hoga,
+     kisi ka naam nahi
+  5. "Token" section me "Reset Token" karo → TOKEN COPY karo
+
+STEP 2 — Bot ko permissions do
+  1. "OAuth2" → "URL Generator" pe jao
+  2. Scopes me: applications.commands + bot select karo
+  3. Bot Permissions me: Send Messages + Embed Links + Use
+     Slash Commands select karo (ya Administrator)
+  4. Generated URL copy karo → browser me kholo → apne server
+     me Add karo
+
+STEP 3 — Config file edit karo
+  1. "config.example.json" ko copy karo → naam rakh lo
+     "config.json"
+  2. Isme ye values dalo:
+
+     token        → Discord bot ka token (Step 1 se)
+     owner_id     → apna Discord User ID (right click → Copy ID)
+                    (Developer Mode ON karo: Settings → Advanced)
+     server       → "https://keyuth-web.onrender.com" (default)
+     key          → aapka ISHU AUTH MASTER API KEY — bot isse
+                    startup pe server pe owner row khud restore
+                    karta hai (Render restart/redeploy pe DB reset
+                    hoti hai — isi liye zaroori hai, warna
+                    "API error." 401 aata hai)
+     name         → apka ISHU AUTH App ID (e.g. APP-1LHEK3)
+     ownerid      → apka ISHU AUTH Owner ID
+     secret       → apka ISHU AUTH Secret
+     version      → apka version (e.g. "1.0")
+     shortener    → wo LONG destination URL jo user ko khulna
+                    hai (aapka VPN / site / video link)
+     vplink_api   → (recommended) AAPKA APNA VPLINK API token.
+                    Har owner ka APNA shortener account hota hai —
+                    isi se unki EARNING unhe milti hai.
+                    VPLINK token yahan se: https://vplink.in
+                    Ya koi bhi: gplinks / shrinkme / VPN link —
+                    jo bhi SYSTEM use karoge, uska token yahan.
+     key_type     → REMOVED. Normal users ab khud choose karte hain:
+                    "/key" pe button aata hai — "License Key" ya
+                    "Username + Password". (Purana config me ho to
+                    chhod do, bot use nahi karta)
+key_hours    → key kitne ghante chalega (default 48)
+      cooldown_hours → user kitne ghante baad naya key le sakta
+                       hai (default 48)
+
+   FULL EXAMPLE — config.json aise dikhega (sab values bhari hui):
+   --------------------------------------------------------------
+   {
+     "token": "MTIzNDU2Nzg5MDEyMzQ1Njc4.OuZt_AbCdEfGhIjKlMnOp",
+     "owner_id": 123456789012345678,
+     "server": "https://keyuth-web.onrender.com",
+     "key": "ISHU_fina-Klv1-U4cv-mYUT-714O-Dl5Y-4ABo-ICeF",
+     "name": "APP-1LHEK3",
+     "ownerid": "IHH231792GMAILCOM-OFPDR",
+     "secret": "SEC_fV0a-6poU-U6sp-xmAN-Wimi-j3ZF-D2HE-d5Hh",
+     "version": "1.0",
+     "shortener": "https://yoursite.com/download-page",
+     "vplink_api": "7d75a5c9716a7dd3df75964f59249d780b3f199a",
+     "key_hours": 48,
+     "cooldown_hours": 48
+   }
+
+   Upar ki har value ko bot.py is tarah padhata hai:
+     SERVER         ← config.json ka "server"      (API server ka URL)
+     MASTER_KEY     ← "key"     (tumhari master API key — startup pe
+                                 owner row auto-restore ke liye)
+     NAME           ← "name"     (tumhari App ID)
+     OWNERID        ← "ownerid"  (tumhara Owner ID)
+     SECRET         ← "secret"   (tumhara Secret)
+     VERSION        ← "version"  (tumhara version)
+     SHORTENER      ← "shortener" (destination link jo user ko khule)
+     VPLINK_API     ← "vplink_api" (tumhara apna VPLINK token)
+     BOT_OWNER      ← "owner_id" (Discord user ID — owner commands
+                                   sirf isi ko milte hain)
+     KEY_HOURS      ← "key_hours"     (default 48)
+     COOLDOWN_HOURS ← "cooldown_hours" (default 48)
+
+STEP 4 — Bot run karo
+  1. Python 3.9+ install hona chahiye
+  2. Terminal me jao is folder me
+  3. Install karo:
+     pip install -r requirements.txt
+  4. Run karo:
+     python bot.py
+  5. Bot online ho jayega → console me "Logged in as ..."
+
+===============================================================
+COMMANDS
+===============================================================
+
+/key      — Normal user: shortener link + 48h key
+            Owner: permanent / 48h / 7d / 30d / 365d / Custom days options
+
+/mykey    — Apna current key aur expiry dikhata hai
+
+/status   — Check karo kitna time bacha hai next key ke liye
+
+===============================================================
+NORMAL USER KA FLOW (VERIFIED — NO FAKE COMPLETION)
+===============================================================
+
+1. User /key type karta hai
+2. Bot puchta hai: "What do you want?"
+   - License Key        (key only)
+   - Username + Password (login wala)
+3. User ek choose karta hai → bot bada **"Open Link"** button +
+   VP link deta hai
+4. User "Open Link" pe click karta hai → DEFAULT BROWSER me VP
+   link khulta hai → AD/captcha complete hoti hai → WAIT karta
+   hai → 100% complete karta hai
+5. Link complete hote hi user ka browser SERVER ke callback pe
+   redirect hota hai → SERVER completion RECORD karta hai
+6. BOT automatically (har 5 sec) server se check karta hai ki
+   completion sach me hui ya nahi
+7. Completion milte hi bot uski chosen key (License ya User+Pass)
+   generate karke DM KARTA HAI — automatically, koi button nahi
+8. 48h tak user dubara key nahi le sakta (/status se check)
+9. 48h ke baad dubara /key se process repeat
+
+KOI "I completed the link" BUTTON NAHI HAI — isi liye FAKE click
+nahi ho sakta. Jo log bina link khola "completed" dabate the,
+ab unko KYA milta hai? — key bilkul nahi, kyunki bot server se
+check karta hai ki uska browser sach me VPLINK redirect se aaya
+hai ya nahi. Jab tak URL khud load nahi hota, key nahi milegi.
+
+AUR: agar vplink_api me GALAT token ho (ya koi aur cheez, jaise
+crypto address), bot key dena BAND kar dega — "VPLINK link nahi
+ban paya" error. Isliye vplink_api me SIRF sahi VPLINK token
+rakho. Sirf wahi ad-earning wala flow chalega.
+
+VERIFY PAGE (8-SEC COUNTDOWN) — ANTI-GLITCH
+===============================================================
+
+Jab user VP link ke baad server ke verify page pe pahunchta hai:
+1. Page pe 8-second forced countdown chalta hai — skip nahi ho
+   sakta, browser me hi rehna padta hai
+2. Countdown khatam hone pe page ek SIGNED confirm bhejta hai
+   (HMAC signature server se)
+3. Signature galat hai to server confirm REJECT karta hai —
+   code-copy / link-copy / direct hit se kuch nahi hota
+4. Confirm sirf valid hone pe completed=true → bot ko pata →
+   DM me key
+
+Isliye: user link khol ke turant back kare / page chhode →
+countdown nahi hua → confirm nahi → KEY NAHI.
+
+===============================================================
+OWNER KA FLOW
+===============================================================
+
+1. Owner /key type karta hai
+2. Bot puchta hai kya banana hai:
+   - License Key  (key only)
+   - Username + Password  (login wala)
+3. Phir duration chunta hai:
+   - Permanent
+   - 48 hours
+   - 7 days
+   - 30 days
+   - 365 days
+   - Custom days  ← koi bhi din daalo (1 se 3650 tak),
+                     jaise 1 din, 2 din, 3 din, 10 din, 90 din
+4. Owner button dabata hai → key generate ho jaata hai
+5. Key DM ya reply me dikhta hai:
+   - License key → License Key
+   - User+Pass  → Username + Password (dono milte hain)
+
+NOTE — OWNER ka naya “Custom days” option:
+“Custom days” pe click karo → ek box khulega → jitne din chahiye
+daalo (e.g. 2, 5, 90) → submit karo → exact utni der ki expiry
+wala key ban jaata hai. Isliye owner full freedom hai — permanent
+ya exact kitne bhi din ka.
+
+===============================================================
+VPLINK AUTO-SHORTENER (OPTIONAL)
+===============================================================
+
+Har owner KA APNA shortener account hota hai — aapka token MERE
+token se bilkul alag hai. Jo bhi bot banayega, uska APNA token
+hoga, aur uski EARNING usi ko milegi.
+
+1. https://vplink.in pe account banao → API section me apna
+   token copy karo (aapke use case ke hisaab se: VP link,
+   GP link, kuch bhi — jo system use karoge uska token)
+2. config.json me:
+   - "shortener"  → wo ASLI LONG URL jo khulna hai
+   - "vplink_api" → apna apna VPLINK token
+3. Ab jab koi /key karega, bot khud uske token se ek chhota
+   link (vplink.in/xxx) bana kar dikhata hai — user usse
+   kholta hai, ad complete hoti hai, completion server verify
+   karta hai, aur key DM me automatically jati hai.
+
+Agar vplink_api khali hai, bot badle me aapka direct
+"shortener" URL hi dikhata hai (puraane jaisa).
+
+===============================================================
+EXAMPLE — SHORTENER / VPLINK CONFIG KAISE BHAREIN
+===============================================================
+
+config.json ka ye hissa aise dikhna chahiye:
+
+Scenario 1 — VPLINK SE PAISE KAMANE HO:
+---------------------------------------------------------------
+  "shortener": "https://yoursite.com/download-page",
+  "vplink_api": "3d22217f8c1b0d9faf78c89bccb1b35dd9ad3064",
+
+  YAHAN:
+  - "shortener"  = TUMHARA destination link (jo page user ko
+                   khulna hai — aapki site / video / download)
+  - "vplink_api" = TUMHARA apna VPLINK token (ad earning
+                   TUMHARE account me aayegi)
+
+Bot ab jab bhi /key karega ye karega:
+   1. Server ek unique task (token) bana deta hai
+   2. VPLINK API se uske callback ka chhota link banega, jaise:
+      https://vplink.in/Xh2kY9
+   3. User ko wo chhota link dikhega
+   4. User kholta hai → AD ho rahi hai → page complete hota
+      hai → browser SERVER ke callback pe redirect hota hai
+   5. Server completion record karta hai → bot check karta hai
+      → key DM me automatically chali jati hai
+
+  Koi "I completed" button nahi — isliye fake click se key
+  NAHI milegi kyunki completion server ke browser-hit se verify
+  hota hai, button click se nahi.
+
+Scenario 2 — VPLINK NAHI, DIRECT SHORTENER LINK HI DO (gplinks / ouo / aadhar koi bhi):
+---------------------------------------------------------------
+  "shortener": "https://gpflixs.in/xyz",
+  "vplink_api": "",
+
+  YAHAN "vplink_api" khali rakho → bot wahi link seedha dikhata
+  hai, koi chhota banane ka kaam nahi.
+
+YAAD RAKHO:
+  - "shortener" me WAHI URL daalo jo BOT user ko open karega
+  - "vplink_api" me SIRF VPLINK ka token, bina kisi space ke
+  - Token galat ho to short link nahi banega — bot phir bhi
+    "shortener" wala link seedha dikha deta hai (kuch nahi toda)
+
+   CONFUSION (ye sabse common hai):
+   "shortener" me VPLINK ka chhota link (vplink.in/xxx) NAHI,
+   wo FINAL destination URL daala jaata hai jahan user ad ke
+   baad pahunchta hai. Chhota link bot HUD banata hai.
+   Jaise:
+     shortener = https://yoursite.com/download-page
+     vplink_api = 7d75a5c9716a7dd3df75964f59249d780b3f199a
+   → User dekhta hai vplink.in/xxxxx (ad) → phir
+     https://yoursite.com/download-page khulta hai
+
+
+LICENSE KEY vs USERNAME+PASSWORD (DM me kya jayega)
+==============================================================
+
+- Normal users: /key dabate hi "What do you want?" — ek button:
+    "License Key"  → DM me License Key bhejta hai
+    "Username + Password" → DM me Username + Password
+  User jab bhi /key kare, khud choose karta hai. VPLINK link
+  complete karne ke baad hi key DM me aati hai (auto-verifierd).
+- Owner (/key kare to):
+    Pehle choose karta hai: "License Key" ya
+    "Username + Password" → phir duration.
+    Isliye owner dono bana sakta hai, dono DM/reply me
+    milta hai, aur Custom days se kitne din ka bhi.
+
+
+
+BOT TOKEN AUR OWNER ID KAHAN?
+- Discord bot token: https://discord.com/developers/applications
+  → apna app → "Bot" → "Reset Token" → Copy
+- Discord User ID: Discord me apne naam pe RIGHT CLICK → "Copy
+  User ID". (Pehle Settings → Advanced → "Developer Mode" ON)
+- Ye dono bas config.json ke "token" aur "owner_id" me jaate
+  hain. Aur kuch nahi karna.
+
+===============================================================
+SHORTENER LINK KAHAN SE LAYEIN?
+===============================================================
+
+Ye aapka choice hai. Koi bhi URL shortener use kar sakte ho:
+
+- gplinks.com
+- shrinkme.io
+-ouo.io
+- VPN links
+- Apna koi custom captcha page
+
+Bot me "shortener" field me sirf URL dalo — jab user /key
+karega, usko ye link dikhega aur button milega. VPLINK token
+ho to auto-shorten hoga (upar dekho).
+
+===============================================================
+IMPORTANT NOTES
+===============================================================
+
+- Bot ke NAAM aur AVATAR — Discord Developer Portal me set
+  karo. Ye aapka apna bot hai, kisi ka nahi.
+
+- Bot ke andar sirf config change karo — code me kuch mat
+  badlo.
+
+- data.json automatically ban jata hai — isme cooldown
+  data store hota hai. Isko delete mat karo.
+
+- agar bot band karke dubara chalao, sab data safe rahega.
+
+- server bot ko sirf 2 cheezein bhejta hai: auth values +
+  username. Koi token nahi, koi login nahi.
+
+===============================================================
+TROUBLESHOOTING
+===============================================================
+
+Problem: Bot slash commands nahi dikhte
+Solution: Bot restart karo. 1-2 minute wait karo.
+
+Problem: "Invalid ownerid/secret"
+Solution: config.json me name/ownerid/secret/version check
+          karo — ye match hona chahiye ISHU AUTH panel se.
+
+Problem: Bot "API error." bol raha hai (owner /key pe)
+Solution: Bot ko band karke dubara chalao — ab startup pe wo
+          master "key" se owner row khud restore karta hai.
+          (Render restart/redeploy pe DB reset hone se pehle ye
+          uth-ta tha.) Configuration me "key" bhara hai pakka
+          karo.
+
+Problem: VPLINK short link nahi ban raha
+Solution: vplink_api me SIRF VPLINK ka token do — wo 40-char ka
+          hex jaisa dikhta hai (e.g. 3d22217f...). Bitcoin
+          address (bc1q...) ya doosri cheez NAHI. Galat token
+          ho to bot seedha callback URL dikhata hai — key to
+          chalti hai, bas ad-earning nahi.
+
+Problem: Key generate nahi ho raha
+Solution: server online hai? check:
+          https://keyuth-web.onrender.com/api/ping
+
+Problem: DM nahi ja raha
+Solution: User ko bot ko DM allow karna hoga ya bot
+          ephemeral msg me key deta hai.
+
+===============================================================
+SUPPORT
+===============================================================
+
+https://github.com/ihh231792-coder/KEYUTH-web
+
+===============================================================

@@ -1,0 +1,20 @@
+# data
+ishu_auth.db
+__pycache__/
+*.pyc
+
+# archives / backups
+*.rar
+*.zip
+
+# os / editors
+Thumbs.db
+.DS_Store
+
+# bot credentials (secret - never commit)
+DiscordBot_Package/config.json
+
+# build output
+IshuAuth_Package/examples/**/bin/
+IshuAuth_Package/examples/**/obj/
+IshuAuth_Package/examples/ConsoleDemo/ConsoleDemo.csproj

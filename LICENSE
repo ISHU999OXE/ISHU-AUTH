@@ -1,0 +1,38 @@
+ISHU AUTH
+              SOFTWARE LICENSE & COPYRIGHT
+               All Rights Reserved
+
+Copyright (c) 2026 ISHU. All rights reserved.
+
+This software, including but not limited to its source code, website
+(HTML/CSS/JavaScript), backend (server.py), C# SDK (IshuAuth.cs,
+ISHU_AUTH_API.cs), API endpoints, logo, design and documentation,
+was created and is owned exclusively by ISHU.
+
+THIS IS NOT OPEN SOURCE.
+
+1. You may NOT copy, clone, publish, fork, repackage, rebrand,
+   re-release or redistribute this software, in whole or in part,
+   in any form, with or without modifications.
+
+2. You may NOT reverse-engineer, decompile, obfuscation-strip or
+   extract parts of this software for use in another project.
+
+3. You may NOT use the ISHU AUTH name, logo, branding or website
+   design for any other product or service.
+
+4. Using this software as-is for your own application (creating an
+   account on https://keyuth-web.onrender.com and integrating the
+   SDK into software you own) is permitted, provided you do not
+   distribute or resell the SDK, the API or the website itself.
+
+5. Unauthorized copying or distribution will be treated as
+   copyright infringement and may result in legal action.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+
+For permission requests, contact the author: ISHU.
+
+          © 2026 ISHU — All Rights Reserved.
