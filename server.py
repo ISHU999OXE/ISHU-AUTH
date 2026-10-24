@@ -8,21 +8,8 @@
 Run:      python server.py
 Then:     http://localhost:3000
 
-This server uses a SQLite database — your app/bot (or C#/APK panel)
-verifies against it live. The panel's Users page also uses this
-server in live DB mode when online.
-
-Endpoints:
-  GET  /api/ping
-  POST /api/bootstrap            {key, appid, appname}
-  GET  /api/licenses?appid=      header: x-api-key
-  POST /api/license              {key, appid, username, password, type, duration, hwid}
-  POST /api/license/resethwid    {key, appid, id}
-  POST /api/resethwid            {key, appid, user, as?}  (as=user -> 1x/24h)
-  POST /api/license/renew        {key, appid, id, duration}
-  POST /api/license/ban          {key, appid, id, banned}
-  DELETE /api/license/<id>       body: {key, appid, id}
-  POST /api/verify               {key, appid, user, pass, hwid}
+This server uses Turso Cloud Database (libSQL / SQLite).
+Data is persistent and survives every render restart/deploy.
 """
 
 import json
@@ -39,11 +26,11 @@ from urllib.parse import urlparse, parse_qs
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.environ.get("ISHU_DB_PATH") or os.path.join(ROOT, "ishu_auth.db")
 PORT = int(os.environ.get("PORT", "3000"))
-# When DATABASE_URL is set (e.g. a free Neon/Supabase Postgres), all data is
-# stored remotely and survives every render deploy/restart. Without it we fall
-# back to the local SQLite file (dev / tests).
-DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
-USING_PG = bool(DATABASE_URL)
+
+# --- Turso Cloud DB (9 GB Persistent Storage) ---
+TURSO_URL = os.environ.get("TURSO_DATABASE_URL") or os.environ.get("DATABASE_URL") or "libsql://ishuauth-ishauth.aws-ap-south-1.turso.io"
+TURSO_TOKEN = os.environ.get("TURSO_AUTH_TOKEN", "")
+USING_TURSO = bool(TURSO_TOKEN or "libsql://" in TURSO_URL)
 
 DUR_MS = {
     "permanent": 0,
@@ -62,7 +49,6 @@ DUR_MS = {
 }
 
 SECRET_PEPPER = "ISHU-AUTH-2026"
-
 HWID_RESET_WINDOW_MS = 24 * 3600 * 1000
 
 
@@ -105,8 +91,6 @@ def html_esc(s):
 
 
 def _verify_html(token, sig, dest, state):
-    """Self-contained countdown page. Only after the full countdown does it POST
-    a signed confirm with the HMAC — so no code copy-paste can fake completion."""
     if state == "bad":
         return "<html><body><h3>Invalid link.</h3></body></html>"
     if state == "done":
@@ -151,7 +135,6 @@ var T={token:"__T__",sig:"__S__",dest:"__D__",left:8};
 
 
 class _Result:
-    """dict-row result so one execute() API works for sqlite + Postgres."""
     __slots__ = ("_rows",)
 
     def __init__(self, rows):
@@ -165,26 +148,18 @@ class _Result:
 
 
 class _Conn:
-    """Connection wrapper: isolates the backend so handlers stay unchanged."""
-
-    def __init__(self, raw, pg):
+    def __init__(self, raw, is_turso=False):
         self._raw = raw
-        self._pg = pg
+        self._turso = is_turso
 
     def execute(self, sql, params=()):
-        if self._pg:
-            cur = self._raw.cursor()
-            if isinstance(params, dict):
-                sql2 = re.sub(r":(\w+)", r"%(\1)s", sql)
-                cur.execute(sql2, params)
-            else:
-                cur.execute(sql.replace("?", "%s"), list(params) if params else params)
-            rows = []
-            if cur.description:
-                cols = [d[0] for d in cur.description]
-                rows = [dict(zip(cols, r)) for r in cur.fetchall()]
-            cur.close()
+        if self._turso:
+            p = list(params) if isinstance(params, (list, tuple)) else params
+            res = self._raw.execute(sql, p)
+            cols = res.columns
+            rows = [dict(zip(cols, r)) for r in res.rows]
             return _Result(rows)
+
         cur = self._raw.execute(sql, params)
         rows = []
         if cur.description:
@@ -193,139 +168,104 @@ class _Conn:
         return _Result(rows)
 
     def executemany(self, sql, seq):
-        if self._pg:
-            cur = self._raw.cursor()
-            cur.executemany(sql.replace("?", "%s"), [list(x) for x in seq])
-            cur.close()
+        if self._turso:
+            for item in seq:
+                self.execute(sql, item)
             return
         self._raw.executemany(sql, seq)
 
     def commit(self):
-        self._raw.commit()
+        if not self._turso:
+            self._raw.commit()
 
     def close(self):
-        self._raw.close()
+        if self._turso:
+            try:
+                self._raw.close()
+            except Exception:
+                pass
+        else:
+            self._raw.close()
 
 
-def _pg_clean_url(url):
-    """Drop libpq options some drivers reject (e.g. channel_binding)."""
-    parts = url.split("?", 1)
-    if len(parts) == 1:
-        return url
-    allowed = ("sslmode", "sslrootcert", "connect_timeout", "application_name")
-    kept = [kv for kv in parts[1].split("&") if kv.split("=", 1)[0] in allowed]
-    return parts[0] + ("?" + "&".join(kept) if kept else "")
-
-
-def _pg_connect():
-    try:
-        import psycopg
-        return psycopg.connect(DATABASE_URL, connect_timeout=30)
-    except Exception:
-        pass
-    try:
-        import psycopg2
-        return psycopg2.connect(DATABASE_URL, connect_timeout=30)
-    except Exception:
-        pass
-    import psycopg
-    return psycopg.connect(_pg_clean_url(DATABASE_URL), connect_timeout=30)
-
-
-def db_init():
-    if USING_PG:
-        con = _pg_connect()
-        cur = con.cursor()
-        try:
-            cur.execute("CREATE TABLE IF NOT EXISTS owners ("
-                        "api_key TEXT, appid TEXT, appname TEXT, owner_label TEXT,"
-                        " owner_id TEXT, secret TEXT, version TEXT,"
-                        " PRIMARY KEY (api_key, appid))")
-            for _col in ("owner_id", "secret", "version"):
-                cur.execute("ALTER TABLE owners ADD COLUMN IF NOT EXISTS %s TEXT" % _col)
-            cur.execute("CREATE TABLE IF NOT EXISTS licenses ("
-                        "id TEXT PRIMARY KEY, appid TEXT, username TEXT, password_hash TEXT,"
-                        " type TEXT, license_key TEXT, hwid TEXT,"
-                        " hwid_locked INTEGER DEFAULT 1, duration TEXT, expires_at BIGINT,"
-                        " created_at BIGINT, last_login BIGINT, banned INTEGER DEFAULT 0)")
-            cur.execute("ALTER TABLE licenses ADD COLUMN IF NOT EXISTS hwid_locked INTEGER DEFAULT 1")
-            cur.execute("ALTER TABLE licenses ADD COLUMN IF NOT EXISTS hwid_reset_at BIGINT")
-            cur.execute("CREATE TABLE IF NOT EXISTS shortlink_tasks ("
-                        "token TEXT PRIMARY KEY, user_id TEXT, ltype TEXT, destination TEXT,"
-                        " created_at BIGINT, completed INTEGER DEFAULT 0, completed_at BIGINT, ip TEXT)")
-            cur.execute("ALTER TABLE shortlink_tasks ADD COLUMN IF NOT EXISTS ip TEXT")
-            cur.execute("CREATE TABLE IF NOT EXISTS accounts ("
-                        "acct TEXT PRIMARY KEY, ownerid TEXT UNIQUE NOT NULL,"
-                        " secret TEXT NOT NULL, apikey TEXT NOT NULL)")
-            con.commit()
-        finally:
-            con.close()
-        return
-    con = sqlite3.connect(DB_PATH)
-    con.execute("""
-        CREATE TABLE IF NOT EXISTS owners (
-            api_key TEXT, appid TEXT, appname TEXT, owner_label TEXT,
-            owner_id TEXT, secret TEXT, version TEXT,
-            PRIMARY KEY (api_key, appid)
-        )
-    """)
-    ocols = [r[1] for r in con.execute("PRAGMA table_info(owners)")]
-    for _col in ("owner_id", "secret", "version"):
-        if _col not in ocols:
-            con.execute("ALTER TABLE owners ADD COLUMN %s TEXT" % _col)
-    con.execute("""
-        CREATE TABLE IF NOT EXISTS licenses (
-            id TEXT PRIMARY KEY,
-            appid TEXT,
-            username TEXT,
-            password_hash TEXT,
-            type TEXT,
-            license_key TEXT,
-            hwid TEXT,
-            hwid_locked INTEGER DEFAULT 1,
-            duration TEXT,
-            expires_at INTEGER,
-            created_at INTEGER,
-            last_login INTEGER,
-            banned INTEGER DEFAULT 0
-        )
-    """)
-    cols = [r[1] for r in con.execute("PRAGMA table_info(licenses)")]
-    if "hwid_locked" not in cols:
-        con.execute("ALTER TABLE licenses ADD COLUMN hwid_locked INTEGER DEFAULT 1")
-    if "hwid_reset_at" not in cols:
-        con.execute("ALTER TABLE licenses ADD COLUMN hwid_reset_at INTEGER")
-    con.execute("""
-        CREATE TABLE IF NOT EXISTS shortlink_tasks (
-            token TEXT PRIMARY KEY,
-            user_id TEXT,
-            ltype TEXT,
-            destination TEXT,
-            created_at INTEGER,
-            completed INTEGER DEFAULT 0,
-            completed_at INTEGER,
-            ip TEXT
-        )
-    """)
-    tcols = [r[1] for r in con.execute("PRAGMA table_info(shortlink_tasks)")]
-    if "ip" not in tcols:
-        con.execute("ALTER TABLE shortlink_tasks ADD COLUMN ip TEXT")
-    con.execute("""
-        CREATE TABLE IF NOT EXISTS accounts (
-            acct TEXT PRIMARY KEY,
-            ownerid TEXT UNIQUE NOT NULL,
-            secret TEXT NOT NULL,
-            apikey TEXT NOT NULL
-        )
-    """)
-    con.commit()
-    con.close()
+def _get_turso_client():
+    import libsql_client
+    return libsql_client.create_client_sync(url=TURSO_URL, auth_token=TURSO_TOKEN)
 
 
 def db():
-    if USING_PG:
-        return _Conn(_pg_connect(), True)
-    return _Conn(sqlite3.connect(DB_PATH), False)
+    if USING_TURSO:
+        return _Conn(_get_turso_client(), is_turso=True)
+    return _Conn(sqlite3.connect(DB_PATH), is_turso=False)
+
+
+def db_init():
+    con = db()
+    try:
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS owners (
+                api_key TEXT, appid TEXT, appname TEXT, owner_label TEXT,
+                owner_id TEXT, secret TEXT, version TEXT,
+                PRIMARY KEY (api_key, appid)
+            )
+        """)
+        for _col in ("owner_id", "secret", "version"):
+            try:
+                con.execute(f"ALTER TABLE owners ADD COLUMN {_col} TEXT")
+            except Exception:
+                pass
+
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS licenses (
+                id TEXT PRIMARY KEY,
+                appid TEXT,
+                username TEXT,
+                password_hash TEXT,
+                type TEXT,
+                license_key TEXT,
+                hwid TEXT,
+                hwid_locked INTEGER DEFAULT 1,
+                duration TEXT,
+                expires_at INTEGER,
+                created_at INTEGER,
+                last_login INTEGER,
+                banned INTEGER DEFAULT 0
+            )
+        """)
+        for _col in ("hwid_locked INTEGER DEFAULT 1", "hwid_reset_at INTEGER"):
+            try:
+                con.execute(f"ALTER TABLE licenses ADD COLUMN {_col}")
+            except Exception:
+                pass
+
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS shortlink_tasks (
+                token TEXT PRIMARY KEY,
+                user_id TEXT,
+                ltype TEXT,
+                destination TEXT,
+                created_at INTEGER,
+                completed INTEGER DEFAULT 0,
+                completed_at INTEGER,
+                ip TEXT
+            )
+        """)
+        try:
+            con.execute("ALTER TABLE shortlink_tasks ADD COLUMN ip TEXT")
+        except Exception:
+            pass
+
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS accounts (
+                acct TEXT PRIMARY KEY,
+                ownerid TEXT UNIQUE NOT NULL,
+                secret TEXT NOT NULL,
+                apikey TEXT NOT NULL
+            )
+        """)
+        con.commit()
+    finally:
+        con.close()
 
 
 def row2dict(r):
@@ -463,10 +403,6 @@ class Handler(SimpleHTTPRequestHandler):
             return
 
         if p.path == "/api/shortlink/v":
-            # Signed verification page: the user MUST stay on this page for the
-            # full countdown; only then the page issues a signed confirm request.
-            # Landing here alone does NOT complete the task (no key without
-            # the HMAC confirm) — so opening the link and backing out gains nothing.
             qs = parse_qs(p.query)
             token = (qs.get("token") or [""])[0]
             tk, dest, state = "--invalid--", "", "bad"
@@ -491,7 +427,6 @@ class Handler(SimpleHTTPRequestHandler):
             self.wfile.write(data)
             return
 
-        # static files
         return super().do_GET()
 
     def do_POST(self):
@@ -504,12 +439,6 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._send_json(fail("key and appid required"))
             ownerid = body.get("ownerid"); secret = body.get("secret"); version = body.get("version")
             con = db()
-            # Registry rule:
-            #  - App is already bound to a DIFFERENT owner identity -> keep that
-            #    canonical owner + secret (prevents hijacking).
-            #  - SAME owner re-registering -> adopt their current secret/version
-            #    so dashboard "Your Values" and the app detail always match
-            #    (self-heals stale randomly-generated app secrets).
             existing = con.execute(
                 "SELECT owner_id, secret FROM owners WHERE api_key=? AND appid=?",
                 (key, appid)).fetchone()
@@ -519,19 +448,11 @@ class Handler(SimpleHTTPRequestHandler):
                 ownerid = existing["owner_id"]
             elif not secret and existing and existing["secret"]:
                 secret = existing["secret"]
-            if USING_PG:
-                con.execute(
-                    "INSERT INTO owners (api_key, appid, appname, owner_label, owner_id, secret, version)"
-                    " VALUES (?,?,?,?,?,?,?)"
-                    " ON CONFLICT (api_key, appid) DO UPDATE SET"
-                    " owner_label=EXCLUDED.owner_label, owner_id=EXCLUDED.owner_id,"
-                    " secret=EXCLUDED.secret, version=EXCLUDED.version",
-                    (key, appid, appname or "", key[:12], ownerid, secret, version))
-            else:
-                con.execute(
-                    "INSERT OR REPLACE INTO owners (api_key, appid, appname, owner_label, owner_id, secret, version)"
-                    " VALUES (?,?,?,?,?,?,?)",
-                    (key, appid, appname or "", key[:12], ownerid, secret, version))
+            
+            con.execute(
+                "INSERT OR REPLACE INTO owners (api_key, appid, appname, owner_label, owner_id, secret, version)"
+                " VALUES (?,?,?,?,?,?,?)",
+                (key, appid, appname or "", key[:12], ownerid, secret, version))
             con.commit(); con.close()
             return self._send_json(ok(appid=appid, owner_id=ownerid, secret=secret, version=version, appname=appname))
 
@@ -584,12 +505,6 @@ class Handler(SimpleHTTPRequestHandler):
         body = self._read_json()
         return self._send_json(self._mutate(body, action="delete", lic_id=m.group(1)))
 
-    # ---------------- helpers ----------------
-
-    # ISHU AUTH: ONE lifetime OwnerID per account (username/email).
-    # The FIRST set of values seen for a username is frozen forever on the
-    # server; every later login of the SAME account gets back the SAME
-    # OwnerID + Secret + API key — on any device, after any update, forever.
     def _account(self, body):
         raw = (body.get("username") or "").strip()
         if not raw:
@@ -611,31 +526,19 @@ class Handler(SimpleHTTPRequestHandler):
             secret = _gen_key("SEC")
         if not apikey:
             apikey = _gen_key("ISHU")
-        if USING_PG:
-            for attempt in range(6):
-                held = con.execute("SELECT acct FROM accounts WHERE ownerid=?",
-                                   (ownerid,)).fetchone()
-                if not held or held["acct"] == acct:
-                    break
-                ownerid = _gen_owner_id(raw + str(attempt) + str(secret)[:3])
-            try:
-                con.execute(
-                    "INSERT INTO accounts (acct, ownerid, secret, apikey)"
-                    " VALUES (?,?,?,?) ON CONFLICT (acct) DO NOTHING",
-                    (acct, ownerid, secret, apikey))
-            except Exception:
-                con.rollback()
-        else:
-            try:
-                con.execute(
-                    "INSERT INTO accounts (acct, ownerid, secret, apikey)"
-                    " VALUES (?,?,?,?)",
-                    (acct, ownerid, secret, apikey))
-            except Exception:
-                pass
+        
+        try:
+            con.execute(
+                "INSERT INTO accounts (acct, ownerid, secret, apikey)"
+                " VALUES (?,?,?,?)",
+                (acct, ownerid, secret, apikey))
+            con.commit()
+        except Exception:
+            pass
+
         row = con.execute("SELECT ownerid, secret, apikey FROM accounts WHERE acct=?",
                           (acct,)).fetchone()
-        con.commit(); con.close()
+        con.close()
         if not row:
             return fail("could not create account", 500)
         return ok(account={"acct": acct, "ownerid": row["ownerid"],
@@ -647,16 +550,12 @@ class Handler(SimpleHTTPRequestHandler):
         con.close()
         return bool(owner)
 
-    # ISHU AUTH: {ownerid, secret, name} instead of {key, appid}
     def _resolve_auth(self, body):
         key = body.get("key"); appid = body.get("appid")
         ownerid = body.get("ownerid"); secret = body.get("secret")
         if ownerid and secret:
             name = body.get("name") or ""
             con = db()
-            # Prefer an app that matches the requested name (appid or appname).
-            # Fall back to the first matching row only for backward-compat
-            # (ownerid+secret alone can't pick between multiple apps).
             owner = None
             if name:
                 owner = con.execute(
@@ -684,11 +583,6 @@ class Handler(SimpleHTTPRequestHandler):
         con.close()
         return o["appname"] if o and o["appname"] else ""
 
-    # --- /api/shortlink: verified VPLINK task system ---
-    # The VPLINK short link wraps our callback URL. Completion is recorded on
-    # the server only when the user's browser actually lands on the callback
-    # (after the VPLINK ad/countdown). The bot just polls /check — there is no
-    # client-side "I completed" button, so fake clicks can never mint a key.
     def _shortlink_new(self, body):
         key, appid, err, code = self._resolve_auth(body)
         if err:
@@ -730,9 +624,6 @@ class Handler(SimpleHTTPRequestHandler):
                   ltype=row["ltype"] or "license")
 
     def _shortlink_confirm(self, body):
-        # Called ONLY by the signed verification page (with the HMAC sig).
-        # Without a valid sig no one can mark a task complete — so copying the
-        # link, backing out, or hitting the URL directly gives nothing.
         token = (body.get("token") or "").strip()
         sig = (body.get("sig") or "").strip()
         if not token:
@@ -789,31 +680,22 @@ class Handler(SimpleHTTPRequestHandler):
         else:
             ms = DUR_MS.get(duration, 0)
             expires = now + ms if ms else None
-        lic = {
-            "id": new_id(),
-            "appid": appid,
-            "username": username,
-            "password_hash": sha(body.get("password") or "") if ltype == "user" else None,
-            "type": ltype,
-            "license_key": body.get("license_key") or gen_key("LIC"),
-            "hwid": body.get("hwid") or None,
-            "hwid_locked": 1 if _flag(body.get("lock")) else 0,
-            "duration": duration,
-            "expires_at": expires,
-            "created_at": now,
-            "last_login": None,
-            "banned": 0,
-        }
+        
+        lic_id = new_id()
+        pw_hash = sha(body.get("password") or "") if ltype == "user" else None
+        lic_key = body.get("license_key") or gen_key("LIC")
+        hwid = body.get("hwid") or None
+        locked = 1 if _flag(body.get("lock")) else 0
+
         con.execute(
             "INSERT INTO licenses (id,appid,username,password_hash,type,license_key,hwid,hwid_locked,duration,expires_at,created_at,last_login,banned)"
-            " VALUES (:id,:appid,:username,:password_hash,:type,:license_key,:hwid,:hwid_locked,:duration,:expires_at,:created_at,:last_login,:banned)",
-            lic)
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,NULL,0)",
+            (lic_id, appid, username, pw_hash, ltype, lic_key, hwid, locked, duration, expires, now))
         con.commit(); con.close()
-        return ok(id=lic["id"], license_key=lic["license_key"], username=username,
+        return ok(id=lic_id, license_key=lic_key, username=username,
                   expires=str(datetime.datetime.fromtimestamp(expires / 1000)) if expires else "permanent",
                   expires_at=expires)
 
-    # --- /api/botkey: upsert key for a named user (for Discord / Telegram bots) ---
     def _bot_key(self, body):
         key, appid, err, code = self._resolve_auth(body)
         if err:
@@ -858,27 +740,17 @@ class Handler(SimpleHTTPRequestHandler):
                       expires_at=expires, renewed=True)
         ltype = body.get("type") or "license"
         password = body.get("password") or ""
-        lic = {
-            "id": new_id(),
-            "appid": appid,
-            "username": username,
-            "password_hash": sha(password) if ltype == "user" else None,
-            "type": ltype,
-            "license_key": gen_key("LIC"),
-            "hwid": None,
-            "hwid_locked": 1 if _flag(body.get("lock"), True) else 0,
-            "duration": "until-date" if until else duration,
-            "expires_at": expires,
-            "created_at": now,
-            "last_login": None,
-            "banned": 0,
-        }
+        lic_id = new_id()
+        lic_key = gen_key("LIC")
+        hwlocked = 1 if _flag(body.get("lock"), True) else 0
+        pw_hash = sha(password) if ltype == "user" else None
+
         con.execute(
             "INSERT INTO licenses (id,appid,username,password_hash,type,license_key,hwid,hwid_locked,duration,expires_at,created_at,last_login,banned)"
-            " VALUES (:id,:appid,:username,:password_hash,:type,:license_key,:hwid,:hwid_locked,:duration,:expires_at,:created_at,:last_login,:banned)",
-            lic)
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,NULL,0)",
+            (lic_id, appid, username, pw_hash, ltype, lic_key, None, hwlocked, "until-date" if until else duration, expires, now))
         con.commit(); con.close()
-        return ok(id=lic["id"], license_key=lic["license_key"], username=username,
+        return ok(id=lic_id, license_key=lic_key, username=username,
                   password=password if ltype == "user" else None,
                   type=ltype,
                   expires=str(datetime.datetime.fromtimestamp(expires / 1000)) if expires else "permanent",
@@ -920,7 +792,7 @@ class Handler(SimpleHTTPRequestHandler):
             banned = 1 if _flag(body.get("banned"), True) else 0
             con.execute("UPDATE licenses SET banned=? WHERE id=?", (banned, lid))
             msg = "banned" if banned else "unbanned"
-        else:  # delete
+        else:
             con.execute("DELETE FROM licenses WHERE id=?", (lid,))
             con.commit(); con.close()
             return ok(message="deleted")
@@ -928,10 +800,6 @@ class Handler(SimpleHTTPRequestHandler):
         return ok(message=msg)
 
     def _resethwid(self, body):
-        """HWID reset for a BUYER's license. Normal users (as=user) may reset
-        once every 24h; the owner (as=owner, or dashboard flow) is unlimited.
-        The caller is still owner-authorized, but the 24h cap is enforced
-        server-side so the same license can't be reset forever."""
         key, appid, err, code = self._resolve_auth(body)
         if err:
             return fail(err, code)
@@ -1015,5 +883,5 @@ class Handler(SimpleHTTPRequestHandler):
 if __name__ == "__main__":
     db_init()
     print(f"  ISHU AUTH server running -> http://localhost:{PORT}")
-    print(f"  Storage: {'Postgres (persistent) via DATABASE_URL' if USING_PG else 'SQLite: ' + DB_PATH}")
+    print(f"  Storage: {'Turso Cloud (9GB Persistent)' if USING_TURSO else 'SQLite: ' + DB_PATH}")
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
