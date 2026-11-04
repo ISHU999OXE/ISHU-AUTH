@@ -10,6 +10,7 @@ Then:     http://localhost:3000
 
 This server uses Turso Cloud Database (libSQL / SQLite).
 Data is persistent and survives every render restart/deploy.
+Optimized for high-speed instant login, connection pooling, and 0-timeout stability.
 """
 
 import json
@@ -20,6 +21,8 @@ import uuid
 import os
 import re
 import datetime
+import threading
+import time
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
@@ -50,6 +53,34 @@ DUR_MS = {
 
 SECRET_PEPPER = "ISHU-AUTH-2026"
 HWID_RESET_WINDOW_MS = 24 * 3600 * 1000
+
+# --- High-Speed In-Memory Cache for App & Owner Lookups ---
+_AUTH_CACHE = {}
+_AUTH_CACHE_LOCK = threading.Lock()
+_local = threading.local()
+
+
+def _cache_get_owner(key):
+    now = time.time()
+    with _AUTH_CACHE_LOCK:
+        entry = _AUTH_CACHE.get(key)
+        if entry and entry["exp"] > now:
+            return entry["val"]
+        if entry:
+            del _AUTH_CACHE[key]
+    return None
+
+
+def _cache_set_owner(key, val, ttl=180):
+    with _AUTH_CACHE_LOCK:
+        if len(_AUTH_CACHE) > 500:
+            _AUTH_CACHE.clear()
+        _AUTH_CACHE[key] = {"val": val, "exp": time.time() + ttl}
+
+
+def _cache_clear_owners():
+    with _AUTH_CACHE_LOCK:
+        _AUTH_CACHE.clear()
 
 
 def _fmt_ms(ms):
@@ -155,7 +186,12 @@ class _Conn:
     def execute(self, sql, params=()):
         if self._turso:
             p = list(params) if isinstance(params, (list, tuple)) else params
-            res = self._raw.execute(sql, p)
+            try:
+                res = self._raw.execute(sql, p)
+            except Exception:
+                _reset_turso_client()
+                self._raw = _get_turso_client()
+                res = self._raw.execute(sql, p)
             cols = res.columns
             rows = [dict(zip(cols, r)) for r in res.rows]
             return _Result(rows)
@@ -179,24 +215,39 @@ class _Conn:
             self._raw.commit()
 
     def close(self):
-        if self._turso:
+        if not self._turso:
             try:
                 self._raw.close()
             except Exception:
                 pass
-        else:
-            self._raw.close()
 
 
 def _get_turso_client():
-    import libsql_client
-    return libsql_client.create_client_sync(url=TURSO_URL, auth_token=TURSO_TOKEN)
+    client = getattr(_local, "turso_client", None)
+    if client is None:
+        import libsql_client
+        client = libsql_client.create_client_sync(url=TURSO_URL, auth_token=TURSO_TOKEN)
+        _local.turso_client = client
+    return client
+
+
+def _reset_turso_client():
+    client = getattr(_local, "turso_client", None)
+    if client is not None:
+        try:
+            client.close()
+        except Exception:
+            pass
+        _local.turso_client = None
 
 
 def db():
     if USING_TURSO:
         return _Conn(_get_turso_client(), is_turso=True)
-    return _Conn(sqlite3.connect(DB_PATH), is_turso=False)
+    con = sqlite3.connect(DB_PATH, timeout=20.0)
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute("PRAGMA synchronous=NORMAL")
+    return _Conn(con, is_turso=False)
 
 
 def db_init():
@@ -263,6 +314,19 @@ def db_init():
                 apikey TEXT NOT NULL
             )
         """)
+
+        # High-performance indexes for instant login and O(1) seeks
+        for idx_sql in (
+            "CREATE INDEX IF NOT EXISTS idx_lic_lookup ON licenses(appid, username)",
+            "CREATE INDEX IF NOT EXISTS idx_lic_key ON licenses(appid, license_key)",
+            "CREATE INDEX IF NOT EXISTS idx_owners_auth ON owners(owner_id, secret)",
+            "CREATE INDEX IF NOT EXISTS idx_owners_key ON owners(api_key, appid)",
+        ):
+            try:
+                con.execute(idx_sql)
+            except Exception:
+                pass
+
         con.commit()
     finally:
         con.close()
@@ -299,7 +363,15 @@ def _gen_key(prefix):
     return (prefix.upper() + "_" + chunks) if prefix else chunks
 
 
+class QuickServer(ThreadingHTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+    timeout = 15
+
+
 class Handler(SimpleHTTPRequestHandler):
+    timeout = 15
+
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=ROOT, **kw)
 
@@ -346,8 +418,17 @@ class Handler(SimpleHTTPRequestHandler):
     # ---------------- API ----------------
     def do_GET(self):
         p = urlparse(self.path)
+
+        # Instant Ping response: Keeps Render health check 100% alive with zero delay
         if p.path == "/api/ping":
-            return self._send_json(ok(version="1.0", server="ishu-auth"))
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", "36")
+            self.send_header("Connection", "close")
+            self._cors()
+            self.end_headers()
+            self.wfile.write(b'{"ok":true,"version":"1.0","ping":1}')
+            return
 
         if p.path == "/api/licenses":
             api_key = self.headers.get("x-api-key")
@@ -356,7 +437,7 @@ class Handler(SimpleHTTPRequestHandler):
             if not api_key or not appid:
                 return self._send_json(fail("missing key or appid", 401))
             con = db()
-            owner = con.execute("SELECT 1 FROM owners WHERE api_key=? AND appid=?",
+            owner = con.execute("SELECT 1 FROM owners WHERE api_key=? AND appid=? LIMIT 1",
                                 (api_key, appid)).fetchone()
             if not owner:
                 con.close()
@@ -377,7 +458,7 @@ class Handler(SimpleHTTPRequestHandler):
             if token:
                 con = db()
                 row = con.execute(
-                    "SELECT destination, completed FROM shortlink_tasks WHERE token=?",
+                    "SELECT destination, completed FROM shortlink_tasks WHERE token=? LIMIT 1",
                     (token,)).fetchone()
                 if row:
                     dest = row["destination"]
@@ -409,7 +490,7 @@ class Handler(SimpleHTTPRequestHandler):
             if token:
                 con = db()
                 row = con.execute(
-                    "SELECT destination, completed FROM shortlink_tasks WHERE token=?",
+                    "SELECT destination, completed FROM shortlink_tasks WHERE token=? LIMIT 1",
                     (token,)).fetchone()
                 con.close()
                 if row:
@@ -440,7 +521,7 @@ class Handler(SimpleHTTPRequestHandler):
             ownerid = body.get("ownerid"); secret = body.get("secret"); version = body.get("version")
             con = db()
             existing = con.execute(
-                "SELECT owner_id, secret FROM owners WHERE api_key=? AND appid=?",
+                "SELECT owner_id, secret FROM owners WHERE api_key=? AND appid=? LIMIT 1",
                 (key, appid)).fetchone()
             if existing and existing["owner_id"] and existing["owner_id"] != ownerid:
                 if existing["secret"]:
@@ -454,6 +535,7 @@ class Handler(SimpleHTTPRequestHandler):
                 " VALUES (?,?,?,?,?,?,?)",
                 (key, appid, appname or "", key[:12], ownerid, secret, version))
             con.commit(); con.close()
+            _cache_clear_owners()
             return self._send_json(ok(appid=appid, owner_id=ownerid, secret=secret, version=version, appname=appname))
 
         if p.path == "/api/account":
@@ -514,7 +596,7 @@ class Handler(SimpleHTTPRequestHandler):
         secret = (body.get("secret") or "").strip()
         apikey = (body.get("apikey") or "").strip()
         con = db()
-        row = con.execute("SELECT ownerid, secret, apikey FROM accounts WHERE acct=?",
+        row = con.execute("SELECT ownerid, secret, apikey FROM accounts WHERE acct=? LIMIT 1",
                           (acct,)).fetchone()
         if row:
             con.close()
@@ -533,10 +615,11 @@ class Handler(SimpleHTTPRequestHandler):
                 " VALUES (?,?,?,?)",
                 (acct, ownerid, secret, apikey))
             con.commit()
+            _cache_clear_owners()
         except Exception:
             pass
 
-        row = con.execute("SELECT ownerid, secret, apikey FROM accounts WHERE acct=?",
+        row = con.execute("SELECT ownerid, secret, apikey FROM accounts WHERE acct=? LIMIT 1",
                           (acct,)).fetchone()
         con.close()
         if not row:
@@ -546,7 +629,7 @@ class Handler(SimpleHTTPRequestHandler):
 
     def _authorize(self, key, appid):
         con = db()
-        owner = con.execute("SELECT 1 FROM owners WHERE api_key=? AND appid=?", (key, appid)).fetchone()
+        owner = con.execute("SELECT 1 FROM owners WHERE api_key=? AND appid=? LIMIT 1", (key, appid)).fetchone()
         con.close()
         return bool(owner)
 
@@ -555,33 +638,60 @@ class Handler(SimpleHTTPRequestHandler):
         ownerid = body.get("ownerid"); secret = body.get("secret")
         if ownerid and secret:
             name = body.get("name") or ""
+            cache_k = f"o:{ownerid}:{secret}:{name}"
+            cached = _cache_get_owner(cache_k)
+            if cached is not None:
+                if not cached:
+                    return (None, None, "invalid ownerid/secret", 401)
+                return (cached[0], cached[1], None, None)
+
             con = db()
             owner = None
             if name:
                 owner = con.execute(
                     "SELECT api_key, appid FROM owners WHERE owner_id=? AND secret=?"
-                    " AND (appid=? OR appname=?)",
+                    " AND (appid=? OR appname=?) LIMIT 1",
                     (ownerid, secret, name, name)).fetchone()
             if owner is None:
                 owner = con.execute(
-                    "SELECT api_key, appid FROM owners WHERE owner_id=? AND secret=?",
+                    "SELECT api_key, appid FROM owners WHERE owner_id=? AND secret=? LIMIT 1",
                     (ownerid, secret)).fetchone()
             con.close()
             if not owner:
+                _cache_set_owner(cache_k, None, ttl=30)
                 return (None, None, "invalid ownerid/secret", 401)
             key, appid = owner["api_key"], owner["appid"]
+            _cache_set_owner(cache_k, (key, appid), ttl=180)
+            return (key, appid, None, None)
+
         if not key or not appid:
             return (None, None, "missing key/appid (or ownerid/secret)", 401)
+
+        cache_k = f"k:{key}:{appid}"
+        cached_auth = _cache_get_owner(cache_k)
+        if cached_auth is not None:
+            if not cached_auth:
+                return (None, None, "invalid key/appid", 401)
+            return (key, appid, None, None)
+
         if not self._authorize(key, appid):
+            _cache_set_owner(cache_k, False, ttl=30)
             return (None, None, "invalid key/appid", 401)
+        _cache_set_owner(cache_k, True, ttl=180)
         return (key, appid, None, None)
 
     def _owner_name(self, key, appid):
+        cache_k = f"name:{key}:{appid}"
+        cached = _cache_get_owner(cache_k)
+        if cached is not None:
+            return cached
         con = db()
-        o = con.execute("SELECT appname FROM owners WHERE api_key=? AND appid=?",
+        o = con.execute("SELECT appname FROM owners WHERE api_key=? AND appid=? LIMIT 1",
                         (key, appid)).fetchone()
         con.close()
-        return o["appname"] if o and o["appname"] else ""
+        val = o["appname"] if o and o["appname"] else ""
+        _cache_set_owner(cache_k, val, ttl=300)
+        return val
 
     def _shortlink_new(self, body):
         key, appid, err, code = self._resolve_auth(body)
@@ -615,7 +725,7 @@ class Handler(SimpleHTTPRequestHandler):
             return fail("token required")
         con = db()
         row = con.execute(
-            "SELECT completed, ltype FROM shortlink_tasks WHERE token=?",
+            "SELECT completed, ltype FROM shortlink_tasks WHERE token=? LIMIT 1",
             (token,)).fetchone()
         con.close()
         if not row:
@@ -635,7 +745,7 @@ class Handler(SimpleHTTPRequestHandler):
             return fail("invalid signature", 403)
         con = db()
         row = con.execute(
-            "SELECT completed FROM shortlink_tasks WHERE token=?", (token,)).fetchone()
+            "SELECT completed FROM shortlink_tasks WHERE token=? LIMIT 1", (token,)).fetchone()
         if not row:
             con.close()
             return fail("task not found", 404)
@@ -663,7 +773,7 @@ class Handler(SimpleHTTPRequestHandler):
             return fail("username required")
         con = db()
         dup = con.execute(
-            "SELECT 1 FROM licenses WHERE appid=? AND username=?", (appid, username)).fetchone()
+            "SELECT 1 FROM licenses WHERE appid=? AND username=? LIMIT 1", (appid, username)).fetchone()
         if dup:
             con.close()
             return fail("user already exists")
@@ -716,7 +826,7 @@ class Handler(SimpleHTTPRequestHandler):
             expires = now + ms if ms else None
         con = db()
         existing = con.execute(
-            "SELECT * FROM licenses WHERE appid=? AND username=?", (appid, username)).fetchone()
+            "SELECT * FROM licenses WHERE appid=? AND username=? LIMIT 1", (appid, username)).fetchone()
         if existing:
             if existing["banned"]:
                 con.close()
@@ -764,7 +874,7 @@ class Handler(SimpleHTTPRequestHandler):
         if not lid:
             return fail("id required")
         con = db()
-        row = con.execute("SELECT * FROM licenses WHERE id=? AND appid=?", (lid, appid)).fetchone()
+        row = con.execute("SELECT * FROM licenses WHERE id=? AND appid=? LIMIT 1", (lid, appid)).fetchone()
         if not row:
             con.close()
             return fail("license not found", 404)
@@ -809,7 +919,7 @@ class Handler(SimpleHTTPRequestHandler):
         actor = (body.get("as") or "owner").strip().lower()
         con = db()
         row = con.execute(
-            "SELECT * FROM licenses WHERE appid=? AND (username=? OR license_key=?)",
+            "SELECT * FROM licenses WHERE appid=? AND (username=? OR license_key=?) LIMIT 1",
             (appid, user, user)).fetchone()
         if not row:
             con.close()
@@ -838,11 +948,13 @@ class Handler(SimpleHTTPRequestHandler):
         if err:
             return fail(err, code)
         user = (body.get("user") or "").strip()
+        if not user:
+            return fail("user required")
         password = body.get("pass") or ""
         hwid = body.get("hwid") or None
         con = db()
         row = con.execute(
-            "SELECT * FROM licenses WHERE appid=? AND (username=? OR license_key=?)",
+            "SELECT * FROM licenses WHERE appid=? AND (username=? OR license_key=?) LIMIT 1",
             (appid, user, user)).fetchone()
         if not row:
             con.close()
@@ -884,4 +996,4 @@ if __name__ == "__main__":
     db_init()
     print(f"  ISHU AUTH server running -> http://localhost:{PORT}")
     print(f"  Storage: {'Turso Cloud (9GB Persistent)' if USING_TURSO else 'SQLite: ' + DB_PATH}")
-    ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+    QuickServer(("0.0.0.0", PORT), Handler).serve_forever()
