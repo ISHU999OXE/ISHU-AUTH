@@ -550,7 +550,7 @@ const fmt = {
     const n = Number(ts);
     if (isNaN(n) || n <= 0) return 'FOREVER';
     const d = new Date(n);
-    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
   },
   since(ts) {
     const s = Math.floor((Date.now() - ts) / 1000);

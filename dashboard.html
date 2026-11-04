@@ -713,36 +713,84 @@ function durPickerHTML(prefix) {
     <div class="input-group">
       <label>${t('expiry')}</label>
       <select class="input" id="${prefix}Dur" onchange="onDurChange('${prefix}')">${durOpts()}</select>
-      <input type="datetime-local" class="input dur-date" id="${prefix}Until" onchange="durDate('${prefix}')">
+      <div class="custom-time-row">
+        <input type="date" class="input dur-date custom-date-picker" id="${prefix}UntilDate" onchange="durDate('${prefix}')" title="Pick date" style="flex:1.2;">
+        <select class="input custom-time-select" id="${prefix}UntilTime" onchange="durDate('${prefix}')" title="Select 12-hour time" style="flex:1;">
+          <option value="23:59">11:59 PM (End of day)</option>
+          <option value="00:00">12:00 AM (Midnight)</option>
+          <option value="01:00">01:00 AM</option>
+          <option value="02:00">02:00 AM</option>
+          <option value="03:00">03:00 AM</option>
+          <option value="04:00">04:00 AM</option>
+          <option value="05:00">05:00 AM</option>
+          <option value="06:00">06:00 AM</option>
+          <option value="07:00">07:00 AM</option>
+          <option value="08:00">08:00 AM</option>
+          <option value="09:00">09:00 AM</option>
+          <option value="10:00">10:00 AM</option>
+          <option value="11:00">11:00 AM</option>
+          <option value="12:00">12:00 PM (Noon)</option>
+          <option value="13:00">01:00 PM</option>
+          <option value="14:00">02:00 PM</option>
+          <option value="15:00">03:00 PM</option>
+          <option value="16:00">04:00 PM</option>
+          <option value="17:00">05:00 PM</option>
+          <option value="18:00">06:00 PM</option>
+          <option value="19:00">07:00 PM</option>
+          <option value="20:00">08:00 PM</option>
+          <option value="21:00">09:00 PM</option>
+          <option value="22:00">10:00 PM</option>
+          <option value="23:00">11:00 PM</option>
+        </select>
+      </div>
       <p class="dur-hint">${t('expiry_hint')}</p>
     </div>`;
 }
 function onDurChange(prefix) {
   const durVal = (el(prefix + 'Dur') || {}).value;
   if (durVal !== 'until-date') {
-    const input = el(prefix + 'Until');
-    if (input) input.value = '';
+    const dInput = el(prefix + 'UntilDate');
+    if (dInput) dInput.value = '';
     PICK[prefix] = undefined;
   }
 }
 function durDate(prefix) {
-  const v = (el(prefix + 'Until') || {}).value;
-  if (v) {
-    const t = new Date(v).getTime();
-    if (!isNaN(t) && t > 0) {
-      PICK[prefix] = t;
+  const dInput = el(prefix + 'UntilDate');
+  const dVal = dInput ? dInput.value : '';
+  if (dVal) {
+    const tInput = el(prefix + 'UntilTime');
+    const tVal = (tInput ? tInput.value : '') || '23:59';
+    const parts = dVal.split('-');
+    const tParts = tVal.split(':');
+    const y = parseInt(parts[0], 10);
+    const mo = parseInt(parts[1], 10) - 1;
+    const da = parseInt(parts[2], 10);
+    const hr = parseInt(tParts[0], 10);
+    const mn = parseInt(tParts[1], 10);
+    const target = new Date(y, mo, da, hr, mn, 0, 0).getTime();
+    if (!isNaN(target) && target > 0) {
+      PICK[prefix] = target;
       return;
     }
   }
   PICK[prefix] = undefined;
 }
 function pickUntil(prefix) {
-  const input = el(prefix + 'Until');
-  const v = input ? input.value : '';
-  if (v) {
-    const t = new Date(v).getTime();
-    if (!isNaN(t) && t > 0) {
-      return { duration: 'until-date', until: t };
+  const dInput = el(prefix + 'UntilDate');
+  const dVal = dInput ? dInput.value : '';
+  if (dVal) {
+    const tInput = el(prefix + 'UntilTime');
+    const tVal = (tInput ? tInput.value : '') || '23:59';
+    const parts = dVal.split('-');
+    const tParts = tVal.split(':');
+    const y = parseInt(parts[0], 10);
+    const mo = parseInt(parts[1], 10) - 1;
+    const da = parseInt(parts[2], 10);
+    const hr = parseInt(tParts[0], 10);
+    const mn = parseInt(tParts[1], 10);
+    const target = new Date(y, mo, da, hr, mn, 0, 0).getTime();
+    if (!isNaN(target) && target > 0) {
+      return { duration: 'until-date', until: target };
     }
   }
   const sel = el(prefix + 'Dur');

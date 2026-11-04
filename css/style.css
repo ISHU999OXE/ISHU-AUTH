@@ -1,4 +1,4 @@
-/* ============================================
+﻿/* ============================================
    ISHU AUTH - Premium "HEAT" Theme v2
    Author: ISHU  ·  Orbitron + Rajdhani
    ============================================ */
@@ -1177,7 +1177,36 @@ textarea.input { resize: vertical; font-family: inherit; min-height: 90px; }
 }
 .dur-date { margin-top: 2px; }
 .dur-hint { font-size: 11px; color: var(--text-dim); margin-top: 8px; line-height: 1.5; }
-input[type="date"].input::-webkit-calendar-picker-indicator { filter: invert(0.8); cursor: pointer; }
+.custom-date-picker,
+input[type="date"].input,
+input[type="datetime-local"].input {
+  color-scheme: dark;
+  position: relative;
+  border-color: rgba(255, 77, 46, 0.5) !important;
+  background: var(--bg-3);
+  color: #fff;
+}
+.custom-date-picker::-webkit-calendar-picker-indicator,
+input[type="date"].input::-webkit-calendar-picker-indicator,
+input[type="datetime-local"].input::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 5px 7px;
+  background-color: var(--accent, #ff4d2e);
+  filter: invert(1) drop-shadow(0 0 8px rgba(255, 77, 46, 0.85));
+  opacity: 1 !important;
+  display: block !important;
+  margin-right: 2px;
+  transition: transform 0.2s, filter 0.2s, background-color 0.2s;
+}
+.custom-date-picker::-webkit-calendar-picker-indicator:hover,
+input[type="date"].input::-webkit-calendar-picker-indicator:hover,
+input[type="datetime-local"].input::-webkit-calendar-picker-indicator:hover {
+  transform: scale(1.15);
+  background-color: var(--accent-2, #ffb030);
+  filter: invert(1) drop-shadow(0 0 12px rgba(255, 176, 48, 1));
+}
+.custom-time-row { display: flex; gap: 8px; margin-top: 6px; align-items: center; }
 
 /* ---------- package download button ---------- */
 .pkg-btn {
