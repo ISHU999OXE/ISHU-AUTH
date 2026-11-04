@@ -38,12 +38,14 @@ USING_TURSO = bool(TURSO_TOKEN or "libsql://" in TURSO_URL)
 DUR_MS = {
     "permanent": 0,
     "1h": 3600 * 1000,
+    "2h": 2 * 3600 * 1000,
     "3h": 3 * 3600 * 1000,
     "6h": 6 * 3600 * 1000,
     "12h": 12 * 3600 * 1000,
     "24h": 24 * 3600 * 1000,
     "48h": 48 * 3600 * 1000,
     "1d": 1 * 24 * 3600 * 1000,
+    "2d": 2 * 24 * 3600 * 1000,
     "3d": 3 * 24 * 3600 * 1000,
     "7d": 7 * 24 * 3600 * 1000,
     "30d": 30 * 24 * 3600 * 1000,
@@ -434,14 +436,28 @@ class Handler(SimpleHTTPRequestHandler):
             api_key = self.headers.get("x-api-key")
             qs = parse_qs(p.query)
             appid = (qs.get("appid") or [""])[0]
-            if not api_key or not appid:
-                return self._send_json(fail("missing key or appid", 401))
+            ownerid = (qs.get("ownerid") or [""])[0]
+            secret = (qs.get("secret") or [""])[0]
+
             con = db()
-            owner = con.execute("SELECT 1 FROM owners WHERE api_key=? AND appid=? LIMIT 1",
-                                (api_key, appid)).fetchone()
-            if not owner:
+            authed = False
+            if ownerid and secret:
+                owner = con.execute("SELECT appid FROM owners WHERE owner_id=? AND secret=? LIMIT 1",
+                                    (ownerid, secret)).fetchone()
+                if owner:
+                    authed = True
+                    if not appid:
+                        appid = owner["appid"]
+            elif api_key and appid:
+                owner = con.execute("SELECT 1 FROM owners WHERE api_key=? AND appid=? LIMIT 1",
+                                    (api_key, appid)).fetchone()
+                if owner:
+                    authed = True
+
+            if not authed:
                 con.close()
-                return self._send_json(fail("invalid key/appid", 401))
+                return self._send_json(fail("invalid key/appid (or ownerid/secret)", 401))
+
             rows = con.execute(
                 "SELECT * FROM licenses WHERE appid=? ORDER BY created_at DESC", (appid,)
             ).fetchall()
@@ -779,17 +795,23 @@ class Handler(SimpleHTTPRequestHandler):
             return fail("user already exists")
         ltype = body.get("type") or "user"
         duration = body.get("duration") or "permanent"
-        now = int(datetime.datetime.now().timestamp() * 1000)
+        now = int(time.time() * 1000)
         until = body.get("until")
-        if until is not None:
+        expires = None
+        if until and str(until).strip() and str(until).strip().lower() not in ("0", "null", "undefined", "none", "permanent"):
             try:
-                expires = int(until)
-                duration = "until-date"
+                val = int(until)
+                if val > 0:
+                    expires = val
+                    duration = "until-date"
             except (TypeError, ValueError):
                 expires = None
-        else:
+
+        if expires is None and duration != "permanent":
             ms = DUR_MS.get(duration, 0)
-            expires = now + ms if ms else None
+            expires = (now + ms) if ms else None
+        elif duration == "permanent":
+            expires = None
         
         lic_id = new_id()
         pw_hash = sha(body.get("password") or "") if ltype == "user" else None
@@ -802,8 +824,9 @@ class Handler(SimpleHTTPRequestHandler):
             " VALUES (?,?,?,?,?,?,?,?,?,?,?,NULL,0)",
             (lic_id, appid, username, pw_hash, ltype, lic_key, hwid, locked, duration, expires, now))
         con.commit(); con.close()
+        exp_str = str(datetime.datetime.fromtimestamp(expires / 1000)) if expires else "permanent"
         return ok(id=lic_id, license_key=lic_key, username=username,
-                  expires=str(datetime.datetime.fromtimestamp(expires / 1000)) if expires else "permanent",
+                  expires=exp_str,
                   expires_at=expires)
 
     def _bot_key(self, body):
@@ -814,19 +837,28 @@ class Handler(SimpleHTTPRequestHandler):
         if not username:
             return fail("username is required")
         duration = body.get("duration") or "48h"
-        now = int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1000)
+        now = int(time.time() * 1000)
         until = body.get("until")
-        if until is not None:
+        expires = None
+        if until and str(until).strip() and str(until).strip().lower() not in ("0", "null", "undefined", "none", "permanent"):
             try:
-                expires = int(until)
+                val = int(until)
+                if val > 0:
+                    expires = val
+                    duration = "until-date"
             except (TypeError, ValueError):
                 expires = None
-        else:
+
+        if expires is None and duration != "permanent":
             ms = DUR_MS.get(duration, 0)
-            expires = now + ms if ms else None
+            expires = (now + ms) if ms else None
+        elif duration == "permanent":
+            expires = None
+
         con = db()
         existing = con.execute(
             "SELECT * FROM licenses WHERE appid=? AND username=? LIMIT 1", (appid, username)).fetchone()
+        exp_str = str(datetime.datetime.fromtimestamp(expires / 1000)) if expires else "permanent"
         if existing:
             if existing["banned"]:
                 con.close()
@@ -844,10 +876,10 @@ class Handler(SimpleHTTPRequestHandler):
                  existing["id"]))
             con.commit(); con.close()
             return ok(id=existing["id"], license_key=new_key, username=username,
-                      password=password if (body.get("type") or existing["type"]) == "user" else None,
-                      type=body.get("type") or existing["type"],
-                      expires=str(datetime.datetime.fromtimestamp(expires / 1000)) if expires else "permanent",
-                      expires_at=expires, renewed=True)
+                       password=password if (body.get("type") or existing["type"]) == "user" else None,
+                       type=body.get("type") or existing["type"],
+                       expires=exp_str,
+                       expires_at=expires, renewed=True)
         ltype = body.get("type") or "license"
         password = body.get("password") or ""
         lic_id = new_id()
@@ -863,7 +895,7 @@ class Handler(SimpleHTTPRequestHandler):
         return ok(id=lic_id, license_key=lic_key, username=username,
                   password=password if ltype == "user" else None,
                   type=ltype,
-                  expires=str(datetime.datetime.fromtimestamp(expires / 1000)) if expires else "permanent",
+                  expires=exp_str,
                   expires_at=expires, renewed=False)
 
     def _mutate(self, body, action, lic_id=None):
@@ -879,23 +911,30 @@ class Handler(SimpleHTTPRequestHandler):
             con.close()
             return fail("license not found", 404)
         if action == "hwid":
-            now = int(datetime.datetime.now().timestamp() * 1000)
+            now = int(time.time() * 1000)
             con.execute("UPDATE licenses SET hwid=NULL, hwid_reset_at=? WHERE id=?",
                         (now, lid))
             msg = "hwid reset"
         elif action == "renew":
             duration = body.get("duration") or "permanent"
-            now = int(datetime.datetime.now().timestamp() * 1000)
+            now = int(time.time() * 1000)
             until = body.get("until")
-            if until is not None:
+            expires = None
+            if until and str(until).strip() and str(until).strip().lower() not in ("0", "null", "undefined", "none", "permanent"):
                 try:
-                    expires = int(until)
-                    duration = "until-date"
+                    val = int(until)
+                    if val > 0:
+                        expires = val
+                        duration = "until-date"
                 except (TypeError, ValueError):
                     expires = None
-            else:
+
+            if expires is None and duration != "permanent":
                 ms = DUR_MS.get(duration, 0)
-                expires = now + ms if ms else None
+                expires = (now + ms) if ms else None
+            elif duration == "permanent":
+                expires = None
+
             con.execute("UPDATE licenses SET duration=?, expires_at=? WHERE id=?", (duration, expires, lid))
             msg = "renewed"
         elif action == "ban":
@@ -971,9 +1010,21 @@ class Handler(SimpleHTTPRequestHandler):
         if row["banned"]:
             con.close()
             return fail("user banned")
-        if row["expires_at"] and int(datetime.datetime.now().timestamp() * 1000) > row["expires_at"]:
+
+        expires_ts = None
+        raw_exp = row.get("expires_at") if isinstance(row, dict) else row["expires_at"]
+        if raw_exp is not None and str(raw_exp).strip() and str(raw_exp).strip().lower() not in ("0", "null", "undefined", "none", "permanent"):
+            try:
+                val = int(raw_exp)
+                if val > 0:
+                    expires_ts = val
+            except (ValueError, TypeError):
+                expires_ts = None
+
+        if expires_ts is not None and int(time.time() * 1000) > expires_ts:
             con.close()
             return fail("subscription expired")
+
         locked = bool(row["hwid_locked"])
         if locked:
             if hwid and row["hwid"] and row["hwid"].lower() != hwid.lower():
@@ -982,13 +1033,14 @@ class Handler(SimpleHTTPRequestHandler):
             new_hwid = row["hwid"] or hwid
         else:
             new_hwid = row["hwid"]
-        now = int(datetime.datetime.now().timestamp() * 1000)
+        now = int(time.time() * 1000)
         con.execute("UPDATE licenses SET last_login=?, hwid=? WHERE id=?", (now, new_hwid, row["id"]))
         con.commit()
-        expires = row["expires_at"]
         con.close()
+        exp_str = str(datetime.datetime.fromtimestamp(expires_ts / 1000)) if expires_ts else "permanent"
         return ok(success=True, message="valid",
-                  expires=str(datetime.datetime.fromtimestamp(expires / 1000)) if expires else "permanent",
+                  expires=exp_str,
+                  expires_at=expires_ts,
                   username=row["username"], type=ltype)
 
 

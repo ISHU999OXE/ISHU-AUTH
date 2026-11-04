@@ -142,7 +142,7 @@ public class IshuAuth
     // =============================================================
 
     /// <summary>Generates a new license key with its own expiry.
-    /// duration: "permanent", "1h","3h","6h","12h","24h","1d","3d","7d","30d","90d","1y",
+    /// duration: "permanent", "1h","2h","3h","6h","12h","24h","1d","3d","7d","30d","90d","1y",
     /// or an exact date (untilMs). lock: false = no HWID binding (easy for bots).</summary>
     public async Task<CreateAck> Generate(string duration = "24h", long? untilMs = null, bool? lock = null)
     {

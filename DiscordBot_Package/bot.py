@@ -1,4 +1,4 @@
-"""
+﻿"""
 Discord Key Bot — ISHU AUTH integration
 Slash /key command: owner gets permanent/custom-expiry options; normal users
 choose License Key or Username+Password, then must REALLY complete a VPLINK
@@ -55,12 +55,14 @@ DATA = _load_data()
 def _passwd() -> str:
     return "UP-" + secrets.token_hex(4).upper()
 
-async def _botkey(username: str, duration: str = "48h", ltype: str = "license", password: str | None = None):
+async def _botkey(username: str, duration: str = "48h", ltype: str = "license", password: str | None = None, until: int | None = None):
     payload = {
         "name": NAME, "ownerid": OWNERID, "secret": SECRET, "version": VERSION,
         "username": username, "duration": duration, "lock": True,
         "type": ltype,
     }
+    if until:
+        payload["until"] = str(until)
     if ltype == "user":
         payload["password"] = password or _passwd()
     data = await _api_post(f"{SERVER}/api/botkey", payload)
@@ -277,11 +279,20 @@ def _time_left(ms: int) -> str:
 
 def _lic_status(row: dict):
     """Returns (status_line, is_active)."""
-    exp = row.get("expires_at")
+    raw_exp = row.get("expires_at")
     now = int(time.time() * 1000)
-    if not exp:
+    exp = None
+    if raw_exp is not None and str(raw_exp).strip() and str(raw_exp).strip().lower() not in ("0", "null", "undefined", "none", "permanent"):
+        try:
+            val = int(raw_exp)
+            if val > 0:
+                exp = val
+        except (ValueError, TypeError):
+            exp = None
+
+    if exp is None:
         return "\U0001f7e2 **Lifetime** (Active forever)", True
-    left = int(exp) - now
+    left = exp - now
     if left > 0:
         return f"\U0001f7e2 **Active** \u2014 Time left: `{_time_left(left)}`", True
     return "\U0001f534 **Expired**", False
@@ -575,8 +586,8 @@ class CustomDaysModal(ui.Modal, title="Custom key duration"):
             from datetime import datetime, timezone, timedelta
             until = int((datetime.now(timezone.utc) + timedelta(days=n)).timestamp() * 1000)
             ltype = self.ltype
-            data = await _botkey(username, duration="custom", ltype=ltype,
-                                 password=_passwd() if ltype == "user" else None)
+            data = await _botkey(username, duration="until-date", ltype=ltype,
+                                 password=_passwd() if ltype == "user" else None, until=until)
             if not data.get("ok"):
                 return await interaction.followup.send(
                     "\u274c **Server Error** \u2014 could not issue key. Please try again.", ephemeral=True)
@@ -646,6 +657,14 @@ class OwnerDurationView(ui.View):
     @ui.button(label="Permanent", style=discord.ButtonStyle.danger, emoji="\U0001f512")
     async def on_permanent(self, interaction: discord.Interaction, button: ui.Button):
         await self._issue(interaction, "permanent")
+
+    @ui.button(label="1 hour", style=discord.ButtonStyle.primary, emoji="\u23f1\ufe0f")
+    async def on_1h(self, interaction: discord.Interaction, button: ui.Button):
+        await self._issue(interaction, "1h")
+
+    @ui.button(label="2 hours", style=discord.ButtonStyle.primary, emoji="\u23f1\ufe0f")
+    async def on_2h(self, interaction: discord.Interaction, button: ui.Button):
+        await self._issue(interaction, "2h")
 
     @ui.button(label="48 hours", style=discord.ButtonStyle.primary, emoji="\u23f0")
     async def on_48h(self, interaction: discord.Interaction, button: ui.Button):

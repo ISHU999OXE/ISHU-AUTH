@@ -81,10 +81,10 @@ public class IshuAuth
             });
             return new VerifyResult
             {
-                Success = Regex.IsMatch(json, "\"success\"\\s*:\\s*true"),
-                Message = GrabField(json, "message"),
-                Expires = GrabField(json, "expires"),
-                Username = GrabField(json, "username")
+                Success = json.Contains("\"success\":true"),
+                Message = Grab(json, "\"message\":\"(.*?)\""),
+                Expires = Grab(json, "\"expires\":\"(.*?)\""),
+                Username = Grab(json, "\"username\":\"(.*?)\"")
             };
         }
         catch (Exception ex)
@@ -100,7 +100,7 @@ public class IshuAuth
     /// <summary>Creates a new user or license. type = "user" or "license".
     /// lock: false = any device (no HWID check), default(true) = only 1 device.</summary>
     public async Task<CreateAck> Create(string username, string password, string duration,
-                                        string type = "user", long? untilMs = null, bool? lockDevice = null)
+                                        string type = "user", long? untilMs = null, bool? lock = null)
     {
         var f = new Dictionary<string, string>
         {
@@ -109,15 +109,15 @@ public class IshuAuth
             ["type"] = type, ["duration"] = duration
         };
         if (untilMs.HasValue) f["until"] = untilMs.Value.ToString();
-        if (lockDevice.HasValue) f["lock"] = lockDevice.Value ? "1" : "0";
+        if (lock.HasValue) f["lock"] = lock.Value ? "1" : "0";
         var json = await Post("/api/license", f);
         return new CreateAck
         {
             ok = Ok(json),
-            Message = GrabField(json, "message"),
-            LicenseKey = GrabField(json, "license_key"),
-            Id = GrabField(json, "id"),
-            Expires = GrabField(json, "expires")
+            Message = Grab(json, "\"message\":\"(.*?)\""),
+            LicenseKey = Grab(json, "\"license_key\":\"(.*?)\""),
+            Id = Grab(json, "\"id\":\"(.*?)\""),
+            Expires = Grab(json, "\"expires\":\"(.*?)\"")
         };
     }
 
@@ -142,12 +142,12 @@ public class IshuAuth
     // =============================================================
 
     /// <summary>Generates a new license key with its own expiry.
-    /// duration: "permanent", "1h","3h","6h","12h","24h","1d","3d","7d","30d","90d","1y",
+    /// duration: "permanent", "1h","2h","3h","6h","12h","24h","1d","3d","7d","30d","90d","1y",
     /// or an exact date (untilMs). lock: false = no HWID binding (easy for bots).</summary>
-    public async Task<CreateAck> Generate(string duration = "24h", long? untilMs = null, bool? lockDevice = null)
+    public async Task<CreateAck> Generate(string duration = "24h", long? untilMs = null, bool? lock = null)
     {
         return await Create("gen-" + Guid.NewGuid().ToString("N").Substring(0, 10),
-                            null, duration, "license", untilMs, lockDevice);
+                            null, duration, "license", untilMs, lock);
     }
 
     /// <summary>HWID reset — unlinks the user's device.</summary>
@@ -190,9 +190,9 @@ public class IshuAuth
     bool Ok(string json)
         => json.Contains("\"ok\":true") || json.Contains("\"ok\": true");
 
-    string GrabField(string json, string name)
+    string Grab(string json, string pat)
     {
-        var m = Regex.Match(json, "\"" + Regex.Escape(name) + "\"\\s*:\\s*\"(.*?)\"");
+        var m = Regex.Match(json, pat);
         return m.Success ? m.Groups[1].Value : "";
     }
 

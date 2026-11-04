@@ -653,12 +653,18 @@ async function renderUsers() {
 }
 
 function normalizeFromServer(x) {
+  let exp = null;
+  const raw = x.expires_at != null ? x.expires_at : x.expiresAt;
+  if (raw != null && raw !== '' && raw !== '0' && raw !== 0 && raw !== 'permanent') {
+    const n = Number(raw);
+    if (!isNaN(n) && n > 0) exp = n;
+  }
   return {
     id: x.id, username: x.username, type: x.type || 'user',
     licenseKey: x.license_key || x.licenseKey,
     passwordPlain: x.password || x.passwordPlain || null,
     duration: x.duration || 'permanent',
-    expiresAt: x.expires_at || x.expiresAt || null,
+    expiresAt: exp,
     hwid: x.hwid || null,
     hwidLocked: x.hwid_locked === 0 ? false : (x.hwidLocked !== false),
     banned: !!x.banned,
@@ -706,21 +712,42 @@ function durPickerHTML(prefix) {
   return `
     <div class="input-group">
       <label>${t('expiry')}</label>
-      <select class="input" id="${prefix}Dur">${durOpts()}</select>
-      <input type="date" class="input dur-date" id="${prefix}Until" onchange="durDate('${prefix}')">
+      <select class="input" id="${prefix}Dur" onchange="onDurChange('${prefix}')">${durOpts()}</select>
+      <input type="datetime-local" class="input dur-date" id="${prefix}Until" onchange="durDate('${prefix}')">
       <p class="dur-hint">${t('expiry_hint')}</p>
     </div>`;
 }
+function onDurChange(prefix) {
+  const durVal = (el(prefix + 'Dur') || {}).value;
+  if (durVal !== 'until-date') {
+    const input = el(prefix + 'Until');
+    if (input) input.value = '';
+    PICK[prefix] = undefined;
+  }
+}
 function durDate(prefix) {
   const v = (el(prefix + 'Until') || {}).value;
-  if (v) { const y = +v.slice(0, 4), mo = +v.slice(5, 7) - 1, da = +v.slice(8, 10); PICK[prefix] = new Date(y, mo, da, 23, 59, 59).getTime(); }
-  else PICK[prefix] = undefined;
+  if (v) {
+    const t = new Date(v).getTime();
+    if (!isNaN(t) && t > 0) {
+      PICK[prefix] = t;
+      return;
+    }
+  }
+  PICK[prefix] = undefined;
 }
 function pickUntil(prefix) {
-  const p = PICK[prefix];
-  if (p === null) return { duration: 'permanent', until: null };
-  if (typeof p === 'number') return { duration: 'until-date', until: p };
-  return { duration: el(prefix + 'Dur').value, until: null };
+  const input = el(prefix + 'Until');
+  const v = input ? input.value : '';
+  if (v) {
+    const t = new Date(v).getTime();
+    if (!isNaN(t) && t > 0) {
+      return { duration: 'until-date', until: t };
+    }
+  }
+  const sel = el(prefix + 'Dur');
+  const dur = sel ? sel.value : 'permanent';
+  return { duration: dur, until: null };
 }
 
 function openUserModal(type) {

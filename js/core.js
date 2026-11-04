@@ -1,4 +1,4 @@
-/* ============================================
+﻿/* ============================================
    ISHU AUTH - Core Engine
    Author: ISHU
    ============================================ */
@@ -421,7 +421,9 @@ const Keys = {
 /* ---------- Duration presets ---------- */
 const DURATIONS = [
   { id: 'permanent', label: 'Permanent', ms: 0 },
-  { id: '1d',    label: '1 Day',   ms: 1 * 24 * 3600 * 1000 },
+  { id: '1h',        label: '1 Hour',    ms: 1 * 3600 * 1000 },
+  { id: '2h',        label: '2 Hours',   ms: 2 * 3600 * 1000 },
+  { id: '1d',        label: '1 Day',     ms: 1 * 24 * 3600 * 1000 },
   { id: '3d',    label: '3 Days',  ms: 3 * 24 * 3600 * 1000 },
   { id: '7d',    label: '7 Days',  ms: 7 * 24 * 3600 * 1000 },
   { id: '30d',   label: '30 Days', ms: 30 * 24 * 3600 * 1000 },
@@ -524,7 +526,13 @@ const Licenses = {
   ticketStatus(l) {
     if (!l) return 'expired';
     if (l.banned) return 'reset';
-    if (l.expiresAt && Date.now() > l.expiresAt) return 'expired';
+    let exp = l.expiresAt;
+    if (exp != null && exp !== '' && exp !== '0' && exp !== 0 && exp !== 'permanent') {
+      const n = Number(exp);
+      if (!isNaN(n) && n > 0) {
+        if (Date.now() > n) return 'expired';
+      }
+    }
     return 'active';
   },
   _save(l) {
@@ -538,7 +546,10 @@ const Licenses = {
 /* ---------- Formatting ---------- */
 const fmt = {
   time(ts) {
-    const d = new Date(ts);
+    if (!ts || ts === 'permanent') return 'FOREVER';
+    const n = Number(ts);
+    if (isNaN(n) || n <= 0) return 'FOREVER';
+    const d = new Date(n);
     return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   },
   since(ts) {
